@@ -1,7 +1,7 @@
 ---
 name: lws
 description: Lightweight Wallet Signer CLI — generate wallets, derive addresses, and sign messages across EVM, Solana, Bitcoin, Cosmos, and Tron chains.
-version: 0.1.0
+version: 0.2.0
 metadata:
   openclaw:
     requires:
