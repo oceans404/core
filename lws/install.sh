@@ -212,10 +212,51 @@ install_node_bindings() {
   fi
 
   info "Installing Node bindings..."
+
+  # Try installing from npm registry first
   if npm install -g @local-wallet-standard/node 2>/dev/null; then
-    info "Node bindings installed successfully"
+    # Verify the package is usable (index.js must exist)
+    local pkg_dir
+    pkg_dir="$(node -e "console.log(require.resolve('@local-wallet-standard/node').replace(/\/index\.js$/, ''))" 2>/dev/null)" || true
+    if [ -n "$pkg_dir" ] && [ -f "$pkg_dir/index.js" ]; then
+      info "Node bindings installed successfully"
+      return
+    fi
+    warn "npm package is incomplete — building from source"
+    npm uninstall -g @local-wallet-standard/node 2>/dev/null || true
+  fi
+
+  # Fallback: build from source
+  if ! command -v cargo &>/dev/null; then
+    if [ -f "$HOME/.cargo/env" ]; then
+      . "$HOME/.cargo/env"
+    fi
+  fi
+  if ! command -v cargo &>/dev/null; then
+    warn "cargo not found — skipping Node bindings (Rust required to build)"
+    return
+  fi
+
+  ensure_repo_cloned
+
+  local node_dir="$REPO_DIR/bindings/node"
+  cd "$node_dir"
+
+  npm install 2>/dev/null
+  npx napi build --platform --release 2>/dev/null
+
+  if [ ! -f "$node_dir/index.js" ]; then
+    warn "Node bindings build failed — index.js not found"
+    return
+  fi
+
+  # Pack into a tarball and install globally (avoids symlink-to-tmpdir issue)
+  local tarball
+  tarball="$(npm pack --pack-destination "$TMPDIR" 2>/dev/null | tail -1)"
+  if [ -n "$tarball" ] && npm install -g "$TMPDIR/$tarball" 2>/dev/null; then
+    info "Node bindings installed successfully (built from source)"
   else
-    warn "Failed to install Node bindings from npm"
+    warn "Failed to install Node bindings globally"
   fi
 }
 
