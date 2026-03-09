@@ -57,7 +57,7 @@
       <a href="#quickstart" class="btn btn-outline btn-large">Quick Start</a>
     </div>
 
-    <!-- One-line Install -->
+    <!-- Install options -->
     <div class="install-command" style="margin-top: 2rem;">
       <div class="code-block-wrapper" style="max-width: 600px; margin: 0 auto;">
         <div class="code-block-header">
@@ -65,7 +65,11 @@
           <button class="code-block-copy" onclick="copyCode(this)">Copy</button>
         </div>
         <div class="code-block">
-<pre>curl -fsSL https://openwallet.sh/install.sh | bash</pre>
+<pre>curl -fsSL https://openwallet.sh/install.sh | bash
+
+<span class="comment"># Or just the language bindings (no CLI needed):</span>
+npm install @local-wallet-standard/node   <span class="comment"># Node.js</span>
+pip install local-wallet-standard          <span class="comment"># Python</span></pre>
         </div>
       </div>
     </div>
@@ -322,35 +326,88 @@
     <span class="section-label">Get Started</span>
     <h2 class="section-title">From zero to signing in 60 seconds</h2>
     <p class="section-description">
-      Install the CLI, create a wallet, create an API key with policies, and start signing. Works with any agent that supports MCP.
+      Choose your path: install the CLI for terminal use, or add the npm/pip package directly to your project. The language bindings are standalone &mdash; no CLI required.
     </p>
 
+    <!-- Install options -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+      <div class="code-block-wrapper" style="max-width: 100%;">
+        <div class="code-block-header">
+          <span class="code-block-title">CLI + Bindings (install script)</span>
+          <button class="code-block-copy" onclick="copyCode(this)">Copy</button>
+        </div>
+        <div class="code-block">
+<pre>curl -fsSL https://openwallet.sh/install.sh | bash</pre>
+        </div>
+      </div>
+      <div class="code-block-wrapper" style="max-width: 100%;">
+        <div class="code-block-header">
+          <span class="code-block-title">Node.js only</span>
+          <button class="code-block-copy" onclick="copyCode(this)">Copy</button>
+        </div>
+        <div class="code-block">
+<pre>npm install @local-wallet-standard/node</pre>
+        </div>
+      </div>
+      <div class="code-block-wrapper" style="max-width: 100%;">
+        <div class="code-block-header">
+          <span class="code-block-title">Python only</span>
+          <button class="code-block-copy" onclick="copyCode(this)">Copy</button>
+        </div>
+        <div class="code-block">
+<pre>pip install local-wallet-standard</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- CLI example -->
     <div class="code-block-wrapper" style="max-width: 100%;">
       <div class="code-block-header">
-        <span class="code-block-title">Terminal</span>
+        <span class="code-block-title">CLI</span>
         <button class="code-block-copy" onclick="copyCode(this)">Copy</button>
       </div>
       <div class="code-block">
-<pre><span class="comment"># Create a wallet</span>
-lws wallet create --name "agent-treasury" --chain evm
-<span class="comment"># => Created wallet 3198bc9c-... with account eip155:8453:0xab16...</span>
+<pre><span class="comment"># Create a wallet (derives addresses for all supported chains)</span>
+lws wallet create --name "agent-treasury"
+<span class="comment"># => Created wallet 3198bc9c-...</span>
+<span class="comment">#    eip155:1      0xab16...  m/44'/60'/0'/0/0</span>
+<span class="comment">#    solana:...    7Kz9...    m/44'/501'/0'/0'</span>
+<span class="comment">#    bip122:...    bc1q...    m/84'/0'/0'/0/0</span>
+<span class="comment">#    cosmos:...    cosmos1... m/44'/118'/0'/0/0</span>
+<span class="comment">#    tron:mainnet  TKLm...    m/44'/195'/0'/0/0</span>
 
-<span class="comment"># Create a policy and an API key scoped to the wallet</span>
-lws policy create --file <span class="string">safe-agent-policy.json</span>
-lws key create --name <span class="string">"claude-agent"</span> --wallet agent-treasury --policy safe-agent
-<span class="comment"># => lws_key_a1b2c3d4e5f6...  (shown once, store securely)</span>
+<span class="comment"># Sign a message</span>
+lws sign message --wallet agent-treasury --chain evm --message <span class="string">"hello"</span>
 
-<span class="comment"># Start the MCP server (agents connect here)</span>
-lws serve --mcp
+<span class="comment"># Sign a transaction</span>
+lws sign tx --wallet agent-treasury --chain evm --tx-hex <span class="string">"deadbeef..."</span></pre>
+      </div>
+    </div>
 
-<span class="comment"># Or start the REST API</span>
-lws serve --rest --port 8402
+    <!-- Node.js example -->
+    <div class="code-block-wrapper" style="max-width: 100%; margin-top: 1.5rem;">
+      <div class="code-block-header">
+        <span class="code-block-title">Node.js &mdash; <a href="https://www.npmjs.com/package/@local-wallet-standard/node" style="color: var(--gray-400); text-decoration: underline;">@local-wallet-standard/node</a></span>
+        <button class="code-block-copy" onclick="copyCode(this)">Copy</button>
+      </div>
+      <div class="code-block">
+<pre><span class="keyword">import</span> {
+  generateMnemonic,
+  createWallet,
+  signMessage,
+} <span class="keyword">from</span> <span class="string">"@local-wallet-standard/node"</span>;
 
-<span class="comment"># Sign a transaction directly</span>
-lws tx sign --wallet agent-treasury \
-  --chain eip155:8453 \
-  --to 0x4B0897b0513fdC7C541B6d9D7E929C4e5364D2dB \
-  --value 0.01</pre>
+<span class="comment">// Generate a 12-word mnemonic</span>
+<span class="keyword">const</span> mnemonic = generateMnemonic(<span class="number">12</span>);
+
+<span class="comment">// Create a universal wallet (all chains at once)</span>
+<span class="keyword">const</span> wallet = createWallet(<span class="string">"agent-treasury"</span>);
+console.log(wallet.accounts);
+<span class="comment">// => [{ chainId: "eip155:1", address: "0x...", derivationPath: "m/44'/60'/0'/0/0" }, ...]</span>
+
+<span class="comment">// Sign a message</span>
+<span class="keyword">const</span> sig = signMessage(<span class="string">"agent-treasury"</span>, <span class="string">"evm"</span>, <span class="string">"hello"</span>);
+console.log(sig.signature);</pre>
       </div>
     </div>
 
@@ -636,7 +693,9 @@ lws tx sign --wallet agent-treasury \
         <a href="docs/doc.html?slug=08-wallet-lifecycle">Lifecycle</a>
       </div>
       <div class="footer-col">
-        <h4>Community</h4>
+        <h4>Packages</h4>
+        <a href="https://www.npmjs.com/package/@local-wallet-standard/node">npm (Node.js)</a>
+        <a href="https://pypi.org/project/local-wallet-standard/">PyPI (Python)</a>
         <a href="https://github.com/dawnlabsai/lws">GitHub</a>
       </div>
     </div>
