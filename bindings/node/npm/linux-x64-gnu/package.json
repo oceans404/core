@@ -1,6 +1,10 @@
 {
   "name": "@local-wallet-standard/node-linux-x64-gnu",
+<<<<<<< HEAD
+  "version": "0.2.13",
+=======
   "version": "0.2.12",
+>>>>>>> main
   "os": [
     "linux"
   ],

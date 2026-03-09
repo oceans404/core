@@ -1,6 +1,10 @@
 {
   "name": "@local-wallet-standard/node-darwin-arm64",
+<<<<<<< HEAD
+  "version": "0.2.13",
+=======
   "version": "0.2.12",
+>>>>>>> main
   "os": [
     "darwin"
   ],
