@@ -90,8 +90,8 @@ mod integration_tests {
         let mnemonic = Mnemonic::from_phrase(ABANDON_PHRASE).unwrap();
         let address = derive_address_for_chain(&mnemonic, ChainType::Ton);
         assert!(
-            address.starts_with("EQ"),
-            "TON bounceable address should start with EQ, got: {}",
+            address.starts_with("UQ"),
+            "TON non-bounceable address should start with UQ, got: {}",
             address
         );
         assert_eq!(address.len(), 48);

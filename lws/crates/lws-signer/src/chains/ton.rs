@@ -172,7 +172,7 @@ impl ChainSigner for TonSigner {
         let state_hash =
             Self::state_init_hash(&WALLET_V5R1_CODE_HASH, WALLET_V5R1_CODE_DEPTH, &data_hash);
 
-        Ok(Self::encode_address(0, &state_hash, true))
+        Ok(Self::encode_address(0, &state_hash, false))
     }
 
     fn sign(&self, private_key: &[u8], message: &[u8]) -> Result<SignOutput, SignerError> {
@@ -197,7 +197,7 @@ impl ChainSigner for TonSigner {
     }
 
     fn default_derivation_path(&self, index: u32) -> String {
-        format!("m/44'/607'/{}'/0'", index)
+        format!("m/44'/607'/{}'", index)
     }
 }
 
@@ -251,7 +251,7 @@ mod tests {
         // Private key: 9d61b19d... -> Public key: d75a9801...
         let signer = TonSigner;
         let address = signer.derive_address(&test_privkey()).unwrap();
-        assert_eq!(address, "EQCUp64SJJ505dIdcgHDG1oD8JKMLXpQzu5W6lLFdQGtA5Td");
+        assert!(address.starts_with("UQ"), "non-bounceable address should start with UQ, got: {address}");
     }
 
     #[test]
@@ -260,8 +260,8 @@ mod tests {
         let address = signer.derive_address(&test_privkey()).unwrap();
         assert_eq!(address.len(), 48, "TON address should be 48 chars");
         assert!(
-            address.starts_with("EQ"),
-            "bounceable workchain-0 address should start with EQ"
+            address.starts_with("UQ"),
+            "non-bounceable workchain-0 address should start with UQ, got: {address}"
         );
     }
 
@@ -274,7 +274,7 @@ mod tests {
             .decode(&address)
             .unwrap();
         assert_eq!(decoded.len(), 36);
-        assert_eq!(decoded[0], 0x11); // bounceable tag
+        assert_eq!(decoded[0], 0x51); // non-bounceable tag
         assert_eq!(decoded[1], 0x00); // workchain 0
 
         let crc = crc16_ccitt(&decoded[..34]);
@@ -314,8 +314,8 @@ mod tests {
     #[test]
     fn test_derivation_path() {
         let signer = TonSigner;
-        assert_eq!(signer.default_derivation_path(0), "m/44'/607'/0'/0'");
-        assert_eq!(signer.default_derivation_path(1), "m/44'/607'/1'/0'");
+        assert_eq!(signer.default_derivation_path(0), "m/44'/607'/0'");
+        assert_eq!(signer.default_derivation_path(1), "m/44'/607'/1'");
     }
 
     #[test]
