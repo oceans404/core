@@ -33,7 +33,7 @@ fn wallet_to_info(w: &EncryptedWallet) -> WalletInfo {
 }
 
 fn parse_chain(s: &str) -> Result<lws_core::Chain, LwsLibError> {
-    lws_core::parse_chain(s).map_err(|e| LwsLibError::InvalidInput(e))
+    lws_core::parse_chain(s).map_err(LwsLibError::InvalidInput)
 }
 
 /// Derive accounts for all chain families from a mnemonic at the given index.

@@ -96,7 +96,7 @@ pub fn import(
         // Determine curve from source chain (default: secp256k1)
         let source_curve = match chain {
             Some(c) => {
-                let parsed = lws_core::parse_chain(c).map_err(|e| CliError::InvalidArgs(e))?;
+                let parsed = lws_core::parse_chain(c).map_err(CliError::InvalidArgs)?;
                 signer_for_chain(parsed.chain_type).curve()
             }
             None => lws_signer::Curve::Secp256k1,

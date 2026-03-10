@@ -111,7 +111,7 @@ impl Config {
                     }
                     config.plugins = user_config.plugins;
                     config.backup = user_config.backup;
-                    if user_config.vault_path != PathBuf::from("/tmp/.lws")
+                    if user_config.vault_path.as_path() != std::path::Path::new("/tmp/.lws")
                         && user_config.vault_path.to_string_lossy() != ""
                     {
                         config.vault_path = user_config.vault_path;

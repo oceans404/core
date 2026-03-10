@@ -47,13 +47,12 @@ pub fn run(purge: bool) -> Result<(), crate::CliError> {
     }
 
     // Remove install dir if empty
-    if install_dir.exists() {
-        if std::fs::read_dir(&install_dir)
+    if install_dir.exists()
+        && std::fs::read_dir(&install_dir)
             .map(|mut d| d.next().is_none())
             .unwrap_or(false)
-        {
-            std::fs::remove_dir(&install_dir).ok();
-        }
+    {
+        std::fs::remove_dir(&install_dir).ok();
     }
 
     // Purge vault data
@@ -146,7 +145,7 @@ fn uninstall_python_bindings() {
     }
 }
 
-fn remove_path_entries(install_dir: &PathBuf) {
+fn remove_path_entries(install_dir: &std::path::Path) {
     let dir_str = install_dir.to_string_lossy();
 
     let rc_files = [

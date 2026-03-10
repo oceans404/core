@@ -313,7 +313,7 @@ fn encode_atomic(type_name: &str, value: &Value) -> Result<[u8; 32], SignerError
             let bits: usize = t[4..]
                 .parse()
                 .map_err(|_| SignerError::InvalidMessage(format!("invalid type: {t}")))?;
-            if bits == 0 || bits > 256 || bits % 8 != 0 {
+            if bits == 0 || bits > 256 || !bits.is_multiple_of(8) {
                 return Err(SignerError::InvalidMessage(format!(
                     "invalid uint width: {bits}"
                 )));
@@ -328,7 +328,7 @@ fn encode_atomic(type_name: &str, value: &Value) -> Result<[u8; 32], SignerError
             let bits: usize = t[3..]
                 .parse()
                 .map_err(|_| SignerError::InvalidMessage(format!("invalid type: {t}")))?;
-            if bits == 0 || bits > 256 || bits % 8 != 0 {
+            if bits == 0 || bits > 256 || !bits.is_multiple_of(8) {
                 return Err(SignerError::InvalidMessage(format!(
                     "invalid int width: {bits}"
                 )));

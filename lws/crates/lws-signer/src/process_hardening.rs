@@ -9,7 +9,8 @@
 use std::sync::{Mutex, OnceLock};
 
 /// Global registry of cleanup functions to run on termination signals.
-static CLEANUP_HOOKS: OnceLock<Mutex<Vec<Box<dyn Fn() + Send>>>> = OnceLock::new();
+type CleanupHooks = Mutex<Vec<Box<dyn Fn() + Send>>>;
+static CLEANUP_HOOKS: OnceLock<CleanupHooks> = OnceLock::new();
 
 fn hooks() -> &'static Mutex<Vec<Box<dyn Fn() + Send>>> {
     CLEANUP_HOOKS.get_or_init(|| Mutex::new(Vec::new()))

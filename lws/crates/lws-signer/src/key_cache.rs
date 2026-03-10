@@ -78,6 +78,10 @@ impl KeyCache {
     pub fn len(&self) -> usize {
         self.entries.lock().unwrap().len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl Drop for KeyCache {

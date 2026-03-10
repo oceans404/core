@@ -5,9 +5,15 @@ use serde::{Deserialize, Serialize};
 #[serde(transparent)]
 pub struct WalletId(pub String);
 
+impl Default for WalletId {
+    fn default() -> Self {
+        WalletId(uuid::Uuid::new_v4().to_string())
+    }
+}
+
 impl WalletId {
     pub fn new() -> Self {
-        WalletId(uuid::Uuid::new_v4().to_string())
+        Self::default()
     }
 }
 

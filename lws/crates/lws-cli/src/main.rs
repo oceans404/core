@@ -229,7 +229,7 @@ enum CliError {
 }
 
 pub(crate) fn parse_chain(s: &str) -> Result<lws_core::Chain, CliError> {
-    lws_core::parse_chain(s).map_err(|e| CliError::InvalidArgs(e))
+    lws_core::parse_chain(s).map_err(CliError::InvalidArgs)
 }
 
 fn main() {
