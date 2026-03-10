@@ -44,10 +44,10 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-22.04
             asset: lws-linux-x86_64
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-22.04
             asset: lws-linux-aarch64
           - target: x86_64-apple-darwin
             os: macos-latest

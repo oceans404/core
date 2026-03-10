@@ -127,14 +127,14 @@ lws sign message --wallet "my-wallet" --chain evm --message "hello world"
 Sign a raw transaction (hex-encoded bytes).
 
 ```bash
-lws sign tx --wallet "my-wallet" --chain evm --tx-hex "02f8..."
+lws sign tx --wallet "my-wallet" --chain evm --tx "02f8..."
 ```
 
 | Flag | Description |
 |------|-------------|
 | `--wallet <NAME>` | Wallet name or ID |
 | `--chain <CHAIN>` | Chain family |
-| `--tx-hex <HEX>` | Hex-encoded transaction bytes |
+| `--tx <HEX>` | Hex-encoded transaction bytes |
 | `--passphrase <PASS>` | Decryption passphrase |
 
 ## Mnemonic Commands
