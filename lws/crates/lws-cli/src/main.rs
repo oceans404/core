@@ -83,6 +83,12 @@ enum WalletCommands {
         /// Account index for HD derivation (mnemonic only)
         #[arg(long, default_value = "0")]
         index: u32,
+        /// Explicit secp256k1 private key (hex). When both --secp256k1-key and --ed25519-key are given, --private-key and stdin are not required.
+        #[arg(long)]
+        secp256k1_key: Option<String>,
+        /// Explicit ed25519 private key (hex). When both --secp256k1-key and --ed25519-key are given, --private-key and stdin are not required.
+        #[arg(long)]
+        ed25519_key: Option<String>,
     },
     /// Export wallet secret (mnemonic or private key) to stdout
     Export {
@@ -269,7 +275,17 @@ fn run(cli: Cli) -> Result<(), CliError> {
                 private_key,
                 chain,
                 index,
-            } => commands::wallet::import(&name, mnemonic, private_key, chain.as_deref(), index),
+                secp256k1_key,
+                ed25519_key,
+            } => commands::wallet::import(
+                &name,
+                mnemonic,
+                private_key,
+                chain.as_deref(),
+                index,
+                secp256k1_key.as_deref(),
+                ed25519_key.as_deref(),
+            ),
             WalletCommands::Export { wallet } => commands::wallet::export(&wallet),
             WalletCommands::Delete { wallet, confirm } => {
                 commands::wallet::delete(&wallet, confirm)

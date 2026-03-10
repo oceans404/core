@@ -190,11 +190,13 @@ const wallet = importWalletMnemonic("imported", "goose puzzle decorate ...");
 
 **Returns:** `WalletInfo`
 
-#### `importWalletPrivateKey(name, privateKeyHex, passphrase?, vaultPath?, chain?)`
+#### `importWalletPrivateKey(name, privateKeyHex, passphrase?, vaultPath?, chain?, secp256k1Key?, ed25519Key?)`
 
 Import a wallet from a hex-encoded private key. All 6 chains are supported: the provided key is used for its curve's chains, and a random key is generated for the other curve.
 
 The optional `chain` parameter specifies which chain the key originates from to determine the curve. Defaults to `"evm"` (secp256k1).
+
+Alternatively, provide explicit keys for each curve via `secp256k1Key` and `ed25519Key`. When both are given, `privateKeyHex` and `chain` are ignored.
 
 ```javascript
 // Import an EVM private key — generates a random Ed25519 key for Solana/TON
@@ -206,15 +208,25 @@ const wallet2 = importWalletPrivateKey(
   "from-solana", "9d61b19d...", undefined, undefined, "solana"
 );
 console.log(wallet2.accounts.length); // => 6
+
+// Import explicit keys for both curves
+const wallet3 = importWalletPrivateKey(
+  "both-keys", "", undefined, undefined, undefined,
+  "4c0883a691...",  // secp256k1 key
+  "9d61b19d..."     // ed25519 key
+);
+console.log(wallet3.accounts.length); // => 6
 ```
 
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
 | `name` | `string` | &mdash; | Wallet name |
-| `privateKeyHex` | `string` | &mdash; | Hex-encoded private key (with or without `0x` prefix) |
+| `privateKeyHex` | `string` | &mdash; | Hex-encoded private key (with or without `0x` prefix). Ignored when both curve keys are provided. |
 | `passphrase` | `string` | `undefined` | Encryption passphrase |
 | `vaultPath` | `string` | `~/.lws/wallets` | Custom vault directory |
 | `chain` | `string` | `"evm"` | Source chain: `"evm"`, `"bitcoin"`, `"cosmos"`, `"tron"` (secp256k1) or `"solana"`, `"ton"` (Ed25519) |
+| `secp256k1Key` | `string` | `undefined` | Explicit secp256k1 private key (hex). Overrides random generation for secp256k1 chains. |
+| `ed25519Key` | `string` | `undefined` | Explicit Ed25519 private key (hex). Overrides random generation for Ed25519 chains. |
 
 **Returns:** `WalletInfo`
 

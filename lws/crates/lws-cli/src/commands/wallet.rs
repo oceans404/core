@@ -75,10 +75,21 @@ pub fn import(
     use_private_key: bool,
     chain: Option<&str>,
     index: u32,
+    secp256k1_key: Option<&str>,
+    ed25519_key: Option<&str>,
 ) -> Result<(), CliError> {
-    if use_mnemonic == use_private_key {
+    let has_curve_keys = secp256k1_key.is_some() || ed25519_key.is_some();
+    let both_curve_keys = secp256k1_key.is_some() && ed25519_key.is_some();
+
+    // Must specify exactly one import mode: --mnemonic, --private-key, or both curve keys
+    if use_mnemonic && (use_private_key || has_curve_keys) {
         return Err(CliError::InvalidArgs(
-            "specify exactly one of --mnemonic or --private-key".into(),
+            "cannot combine --mnemonic with --private-key or curve-specific keys".into(),
+        ));
+    }
+    if !use_mnemonic && !use_private_key && !both_curve_keys {
+        return Err(CliError::InvalidArgs(
+            "specify --mnemonic, --private-key, or both --secp256k1-key and --ed25519-key".into(),
         ));
     }
 
@@ -89,26 +100,55 @@ pub fn import(
         let phrase_bytes = mnemonic.phrase();
         (accts, phrase_bytes.expose().to_vec(), KeyType::Mnemonic)
     } else {
-        let hex_key = super::read_private_key()?;
-        let hex_trimmed = hex_key.strip_prefix("0x").unwrap_or(&hex_key);
-        let key_bytes = hex::decode(hex_trimmed)
-            .map_err(|e| CliError::InvalidArgs(format!("invalid hex private key: {e}")))?;
-        // Determine curve from source chain (default: secp256k1)
-        let source_curve = match chain {
-            Some(c) => {
-                let parsed = lws_core::parse_chain(c).map_err(CliError::InvalidArgs)?;
-                signer_for_chain(parsed.chain_type).curve()
+        let decode_hex = |s: &str| -> Result<Vec<u8>, CliError> {
+            let trimmed = s.strip_prefix("0x").unwrap_or(s);
+            hex::decode(trimmed)
+                .map_err(|e| CliError::InvalidArgs(format!("invalid hex private key: {e}")))
+        };
+
+        let keys = if both_curve_keys {
+            // Both curve keys provided explicitly
+            let secp = decode_hex(secp256k1_key.unwrap())?;
+            let ed = decode_hex(ed25519_key.unwrap())?;
+            (secp, ed)
+        } else {
+            // Single key from stdin/env, optionally with one curve key override
+            let hex_key = super::read_private_key()?;
+            let key_bytes = decode_hex(&hex_key)?;
+
+            // Determine curve from source chain (default: secp256k1)
+            let source_curve = match chain {
+                Some(c) => {
+                    let parsed = lws_core::parse_chain(c).map_err(CliError::InvalidArgs)?;
+                    signer_for_chain(parsed.chain_type).curve()
+                }
+                None => lws_signer::Curve::Secp256k1,
+            };
+
+            // Generate random key for the other curve (may be overridden)
+            let mut random_key = vec![0u8; 32];
+            getrandom::getrandom(&mut random_key).map_err(|e| {
+                CliError::InvalidArgs(format!("failed to generate random key: {e}"))
+            })?;
+
+            match source_curve {
+                lws_signer::Curve::Secp256k1 => {
+                    let ed = ed25519_key
+                        .map(decode_hex)
+                        .transpose()?
+                        .unwrap_or(random_key);
+                    (key_bytes, ed)
+                }
+                lws_signer::Curve::Ed25519 => {
+                    let secp = secp256k1_key
+                        .map(decode_hex)
+                        .transpose()?
+                        .unwrap_or(random_key);
+                    (secp, key_bytes)
+                }
             }
-            None => lws_signer::Curve::Secp256k1,
         };
-        // Generate random key for the other curve
-        let mut other_key = vec![0u8; 32];
-        getrandom::getrandom(&mut other_key)
-            .map_err(|e| CliError::InvalidArgs(format!("failed to generate random key: {e}")))?;
-        let keys = match source_curve {
-            lws_signer::Curve::Secp256k1 => (key_bytes, other_key),
-            lws_signer::Curve::Ed25519 => (other_key, key_bytes),
-        };
+
         let payload = serde_json::json!({
             "secp256k1": hex::encode(&keys.0),
             "ed25519": hex::encode(&keys.1),

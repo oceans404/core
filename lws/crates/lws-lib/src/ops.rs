@@ -227,15 +227,29 @@ pub fn import_wallet_mnemonic(
     Ok(wallet_to_info(&wallet))
 }
 
+/// Decode a hex-encoded key, stripping an optional `0x` prefix.
+fn decode_hex_key(hex_str: &str) -> Result<Vec<u8>, LwsLibError> {
+    let trimmed = hex_str.strip_prefix("0x").unwrap_or(hex_str);
+    hex::decode(trimmed)
+        .map_err(|e| LwsLibError::InvalidInput(format!("invalid hex private key: {e}")))
+}
+
 /// Import a wallet from a hex-encoded private key.
 /// The `chain` parameter specifies which chain the key originates from (e.g. "evm", "solana").
 /// A random key is generated for the other curve so all 6 chains are supported.
+///
+/// Alternatively, provide both `secp256k1_key_hex` and `ed25519_key_hex` to supply
+/// explicit keys for each curve. When both are given, `private_key_hex` and `chain`
+/// are ignored. When only one curve key is given alongside `private_key_hex`, it
+/// overrides the random generation for that curve.
 pub fn import_wallet_private_key(
     name: &str,
     private_key_hex: &str,
     chain: Option<&str>,
     passphrase: Option<&str>,
     vault_path: Option<&Path>,
+    secp256k1_key_hex: Option<&str>,
+    ed25519_key_hex: Option<&str>,
 ) -> Result<WalletInfo, LwsLibError> {
     let passphrase = passphrase.unwrap_or("");
 
@@ -243,35 +257,48 @@ pub fn import_wallet_private_key(
         return Err(LwsLibError::WalletNameExists(name.to_string()));
     }
 
-    let hex_trimmed = private_key_hex
-        .strip_prefix("0x")
-        .unwrap_or(private_key_hex);
-    let key_bytes = hex::decode(hex_trimmed)
-        .map_err(|e| LwsLibError::InvalidInput(format!("invalid hex private key: {e}")))?;
+    let keys = match (secp256k1_key_hex, ed25519_key_hex) {
+        // Both curve keys explicitly provided — use them directly
+        (Some(secp_hex), Some(ed_hex)) => KeyPair {
+            secp256k1: decode_hex_key(secp_hex)?,
+            ed25519: decode_hex_key(ed_hex)?,
+        },
+        // Existing single-key behavior
+        _ => {
+            let key_bytes = decode_hex_key(private_key_hex)?;
 
-    // Determine curve from the source chain (default: secp256k1)
-    let source_curve = match chain {
-        Some(c) => {
-            let parsed = parse_chain(c)?;
-            signer_for_chain(parsed.chain_type).curve()
+            // Determine curve from the source chain (default: secp256k1)
+            let source_curve = match chain {
+                Some(c) => {
+                    let parsed = parse_chain(c)?;
+                    signer_for_chain(parsed.chain_type).curve()
+                }
+                None => lws_signer::Curve::Secp256k1,
+            };
+
+            // Build key pair: provided key for its curve, random 32 bytes for the other
+            let mut other_key = vec![0u8; 32];
+            getrandom::getrandom(&mut other_key).map_err(|e| {
+                LwsLibError::InvalidInput(format!("failed to generate random key: {e}"))
+            })?;
+
+            match source_curve {
+                lws_signer::Curve::Secp256k1 => KeyPair {
+                    secp256k1: key_bytes,
+                    ed25519: ed25519_key_hex
+                        .map(decode_hex_key)
+                        .transpose()?
+                        .unwrap_or(other_key),
+                },
+                lws_signer::Curve::Ed25519 => KeyPair {
+                    secp256k1: secp256k1_key_hex
+                        .map(decode_hex_key)
+                        .transpose()?
+                        .unwrap_or(other_key),
+                    ed25519: key_bytes,
+                },
+            }
         }
-        None => lws_signer::Curve::Secp256k1,
-    };
-
-    // Build key pair: provided key for its curve, random 32 bytes for the other
-    let mut other_key = vec![0u8; 32];
-    getrandom::getrandom(&mut other_key)
-        .map_err(|e| LwsLibError::InvalidInput(format!("failed to generate random key: {e}")))?;
-
-    let keys = match source_curve {
-        lws_signer::Curve::Secp256k1 => KeyPair {
-            secp256k1: key_bytes,
-            ed25519: other_key,
-        },
-        lws_signer::Curve::Ed25519 => KeyPair {
-            secp256k1: other_key,
-            ed25519: key_bytes,
-        },
     };
 
     let accounts = derive_all_accounts_from_keys(&keys)?;
@@ -977,8 +1004,16 @@ mod tests {
         let vault = dir.path();
 
         let info =
-            import_wallet_private_key("pk-api", TEST_PRIVKEY, Some("evm"), None, Some(vault))
-                .unwrap();
+            import_wallet_private_key(
+                "pk-api",
+                TEST_PRIVKEY,
+                Some("evm"),
+                None,
+                Some(vault),
+                None,
+                None,
+            )
+            .unwrap();
         assert!(
             !info.accounts.is_empty(),
             "should derive at least one account"
@@ -992,6 +1027,43 @@ mod tests {
         let exported = export_wallet("pk-api", None, Some(vault)).unwrap();
         let obj: serde_json::Value = serde_json::from_str(&exported).unwrap();
         assert_eq!(obj["secp256k1"].as_str().unwrap(), TEST_PRIVKEY);
+    }
+
+    #[test]
+    fn privkey_wallet_import_both_curve_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = dir.path();
+
+        let secp_key = "4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318";
+        let ed_key = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60";
+
+        let info = import_wallet_private_key(
+            "pk-both",
+            "",          // ignored when both curve keys provided
+            None,        // chain ignored too
+            None,
+            Some(vault),
+            Some(secp_key),
+            Some(ed_key),
+        )
+        .unwrap();
+
+        assert_eq!(info.accounts.len(), 6, "should have all 6 chain accounts");
+
+        // Sign on EVM (secp256k1)
+        let sig = sign_message("pk-both", "evm", "hello", None, None, None, Some(vault)).unwrap();
+        assert!(!sig.signature.is_empty());
+
+        // Sign on Solana (ed25519)
+        let sig =
+            sign_message("pk-both", "solana", "hello", None, None, None, Some(vault)).unwrap();
+        assert!(!sig.signature.is_empty());
+
+        // Export should return both keys
+        let exported = export_wallet("pk-both", None, Some(vault)).unwrap();
+        let obj: serde_json::Value = serde_json::from_str(&exported).unwrap();
+        assert_eq!(obj["secp256k1"].as_str().unwrap(), secp_key);
+        assert_eq!(obj["ed25519"].as_str().unwrap(), ed_key);
     }
 
     // ================================================================
@@ -1163,8 +1235,16 @@ mod tests {
     fn error_invalid_private_key_hex() {
         let dir = tempfile::tempdir().unwrap();
         assert!(
-            import_wallet_private_key("bad", "not-hex", Some("evm"), None, Some(dir.path()))
-                .is_err()
+            import_wallet_private_key(
+                "bad",
+                "not-hex",
+                Some("evm"),
+                None,
+                Some(dir.path()),
+                None,
+                None,
+            )
+            .is_err()
         );
     }
 

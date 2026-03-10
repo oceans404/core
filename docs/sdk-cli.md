@@ -56,6 +56,11 @@ echo "4c0883a691..." | lws wallet import --name "from-evm" --private-key
 
 # Import an Ed25519 key (e.g. from Solana)
 echo "9d61b19d..." | lws wallet import --name "from-sol" --private-key --chain solana
+
+# Import explicit keys for both curves (no stdin needed)
+lws wallet import --name "both" \
+  --secp256k1-key "4c0883a691..." \
+  --ed25519-key "9d61b19d..."
 ```
 
 | Flag | Description |
@@ -65,8 +70,10 @@ echo "9d61b19d..." | lws wallet import --name "from-sol" --private-key --chain s
 | `--private-key` | Import a raw private key |
 | `--chain <CHAIN>` | Source chain for private key import (determines curve, default: evm) |
 | `--index <N>` | Account index for HD derivation (mnemonic only, default: 0) |
+| `--secp256k1-key <HEX>` | Explicit secp256k1 private key. When combined with `--ed25519-key`, `--private-key` is not required. |
+| `--ed25519-key <HEX>` | Explicit Ed25519 private key. When combined with `--secp256k1-key`, `--private-key` is not required. |
 
-Private key imports generate all 6 chain accounts: the provided key is used for its curve's chains, and a random key is generated for the other curve.
+Private key imports generate all 6 chain accounts: the provided key is used for its curve's chains, and a random key is generated for the other curve. Use `--secp256k1-key` and `--ed25519-key` together to supply both keys explicitly.
 
 ### `lws wallet export`
 

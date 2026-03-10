@@ -92,7 +92,7 @@ Both bindings expose the same 13 functions:
 | `derive_address(mnemonic, chain, index?)` | Derive a chain-specific address from a mnemonic |
 | `create_wallet(name, chain, passphrase, words?, vault_path?)` | Create a new wallet (generates mnemonic, encrypts, saves) |
 | `import_wallet_mnemonic(name, chain, mnemonic, passphrase, index?, vault_path?)` | Import a wallet from a mnemonic |
-| `import_wallet_private_key(name, chain, key_hex, passphrase, vault_path?)` | Import a wallet from a raw private key |
+| `import_wallet_private_key(name, chain, key_hex, passphrase, vault_path?, secp256k1_key?, ed25519_key?)` | Import a wallet from a raw private key (or explicit per-curve keys) |
 | `list_wallets(vault_path?)` | List all wallets in the vault |
 | `get_wallet(name_or_id, vault_path?)` | Get a single wallet by name or ID |
 | `delete_wallet(name_or_id, vault_path?)` | Delete a wallet |

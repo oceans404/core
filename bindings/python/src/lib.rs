@@ -56,14 +56,17 @@ fn import_wallet_mnemonic(
 }
 
 /// Import a wallet from a hex-encoded private key (derives addresses for all chains).
+/// Optionally specify explicit keys per curve via `secp256k1_key` and `ed25519_key`.
 #[pyfunction]
-#[pyo3(signature = (name, private_key_hex, chain=None, passphrase=None, vault_path_opt=None))]
+#[pyo3(signature = (name, private_key_hex, chain=None, passphrase=None, vault_path_opt=None, secp256k1_key=None, ed25519_key=None))]
 fn import_wallet_private_key(
     name: &str,
     private_key_hex: &str,
     chain: Option<&str>,
     passphrase: Option<&str>,
     vault_path_opt: Option<String>,
+    secp256k1_key: Option<&str>,
+    ed25519_key: Option<&str>,
 ) -> PyResult<PyObject> {
     let info = lws_lib::import_wallet_private_key(
         name,
@@ -71,6 +74,8 @@ fn import_wallet_private_key(
         chain,
         passphrase,
         vault_path(vault_path_opt).as_deref(),
+        secp256k1_key,
+        ed25519_key,
     )
     .map_err(map_err)?;
     Python::with_gil(|py| wallet_info_to_dict(py, &info))

@@ -156,6 +156,35 @@ describe('@local-wallet-standard/node', () => {
     deleteWallet('pk-ed', vaultDir);
   });
 
+  // ---- Private key import (both curves) ----
+
+  it('imports both curve keys explicitly', () => {
+    const secpKey = '4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318';
+    const edKey = '9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60';
+
+    const wallet = importWalletPrivateKey(
+      'pk-both', '', undefined, vaultDir, undefined, secpKey, edKey
+    );
+
+    assert.equal(wallet.name, 'pk-both');
+    assert.equal(wallet.accounts.length, 6, 'should have all 6 chain accounts');
+
+    // Sign on EVM (secp256k1 key)
+    const evmSig = signMessage('pk-both', 'evm', 'hello', undefined, undefined, undefined, vaultDir);
+    assert.ok(evmSig.signature.length > 0);
+
+    // Sign on Solana (ed25519 key)
+    const solSig = signMessage('pk-both', 'solana', 'hello', undefined, undefined, undefined, vaultDir);
+    assert.ok(solSig.signature.length > 0);
+
+    // Export returns both provided keys
+    const exported = JSON.parse(exportWallet('pk-both', undefined, vaultDir));
+    assert.equal(exported.secp256k1, secpKey);
+    assert.equal(exported.ed25519, edKey);
+
+    deleteWallet('pk-both', vaultDir);
+  });
+
   // ---- Signing all chains ----
 
   it('signs messages on all chains', () => {

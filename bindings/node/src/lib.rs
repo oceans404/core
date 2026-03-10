@@ -118,6 +118,9 @@ pub fn import_wallet_mnemonic(
 /// and a random key is generated for the other curve.
 /// The optional `chain` parameter specifies the key's source chain (e.g. "evm", "solana")
 /// to determine which curve it uses. Defaults to "evm" (secp256k1).
+///
+/// Alternatively, provide explicit keys for each curve via `secp256k1Key` and `ed25519Key`.
+/// When both are given, `privateKeyHex` and `chain` are ignored.
 #[napi]
 pub fn import_wallet_private_key(
     name: String,
@@ -125,6 +128,8 @@ pub fn import_wallet_private_key(
     passphrase: Option<String>,
     vault_path_opt: Option<String>,
     chain: Option<String>,
+    secp256k1_key: Option<String>,
+    ed25519_key: Option<String>,
 ) -> Result<WalletInfo> {
     lws_lib::import_wallet_private_key(
         &name,
@@ -132,6 +137,8 @@ pub fn import_wallet_private_key(
         chain.as_deref(),
         passphrase.as_deref(),
         vault_path(vault_path_opt).as_deref(),
+        secp256k1_key.as_deref(),
+        ed25519_key.as_deref(),
     )
     .map(WalletInfo::from)
     .map_err(map_err)

@@ -165,11 +165,13 @@ Import a wallet from a BIP-39 mnemonic. Derives all 6 chain accounts via HD path
 wallet = import_wallet_mnemonic("imported", "goose puzzle decorate ...")
 ```
 
-#### `import_wallet_private_key(name, private_key_hex, passphrase=None, vault_path=None, chain=None)`
+#### `import_wallet_private_key(name, private_key_hex, chain=None, passphrase=None, vault_path=None, secp256k1_key=None, ed25519_key=None)`
 
 Import a wallet from a hex-encoded private key. All 6 chains are supported: the provided key is used for its curve's chains, and a random key is generated for the other curve.
 
 The optional `chain` parameter specifies which chain the key originates from to determine the curve. Defaults to `"evm"` (secp256k1).
+
+Alternatively, provide explicit keys for each curve via `secp256k1_key` and `ed25519_key`. When both are given, `private_key_hex` and `chain` are ignored.
 
 ```python
 # Import an EVM private key — generates a random Ed25519 key for Solana/TON
@@ -181,15 +183,25 @@ wallet = import_wallet_private_key(
     "from-solana", "9d61b19d...", chain="solana"
 )
 print(len(wallet["accounts"]))  # => 6
+
+# Import explicit keys for both curves
+wallet = import_wallet_private_key(
+    "both-keys", "",
+    secp256k1_key="4c0883a691...",
+    ed25519_key="9d61b19d..."
+)
+print(len(wallet["accounts"]))  # => 6
 ```
 
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
 | `name` | `str` | &mdash; | Wallet name |
-| `private_key_hex` | `str` | &mdash; | Hex-encoded private key |
+| `private_key_hex` | `str` | &mdash; | Hex-encoded private key. Ignored when both curve keys are provided. |
+| `chain` | `str` | `"evm"` | Source chain: `"evm"`, `"bitcoin"`, `"cosmos"`, `"tron"` (secp256k1) or `"solana"`, `"ton"` (Ed25519) |
 | `passphrase` | `str` | `None` | Encryption passphrase |
 | `vault_path` | `str` | `None` | Custom vault directory |
-| `chain` | `str` | `"evm"` | Source chain: `"evm"`, `"bitcoin"`, `"cosmos"`, `"tron"` (secp256k1) or `"solana"`, `"ton"` (Ed25519) |
+| `secp256k1_key` | `str` | `None` | Explicit secp256k1 private key (hex) |
+| `ed25519_key` | `str` | `None` | Explicit Ed25519 private key (hex) |
 
 ### Signing
 
