@@ -50,7 +50,9 @@
       "Bash(cargo run:*)",
       "Bash(cargo check:*)",
       "Bash($LWS_BIN mnemonic:*)",
-      "Bash(bash:*)"
+      "Bash(bash:*)",
+      "Bash(pip index:*)",
+      "Bash(/tmp/lws-check/bin/pip install:*)"
     ]
   }
 }

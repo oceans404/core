@@ -1193,8 +1193,13 @@ mod tests {
             "EVM signature should be 65 bytes (r + s + v)"
         );
 
-        // Recover public key from signature
-        let recid = k256::ecdsa::RecoveryId::try_from(sig_bytes[64]).unwrap();
+        // Recover public key from signature (v is 27 or 28 per EIP-191)
+        let v = sig_bytes[64];
+        assert!(
+            v == 27 || v == 28,
+            "EIP-191 v byte should be 27 or 28, got {v}"
+        );
+        let recid = k256::ecdsa::RecoveryId::try_from(v - 27).unwrap();
         let ecdsa_sig = k256::ecdsa::Signature::from_slice(&sig_bytes[..64]).unwrap();
         let recovered_key =
             k256::ecdsa::VerifyingKey::recover_from_prehash(&hash, &ecdsa_sig, recid).unwrap();
