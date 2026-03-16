@@ -8,6 +8,7 @@ version = "0.3.1"
 description = "Python native bindings for the Open Wallet Standard"
 requires-python = ">=3.8"
 license = { text = "MIT" }
+readme = "README.md"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
