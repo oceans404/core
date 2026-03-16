@@ -11,16 +11,18 @@ pub enum ChainType {
     Bitcoin,
     Tron,
     Ton,
+    Spark,
 }
 
 /// All supported chain families, used for universal wallet derivation.
-pub const ALL_CHAIN_TYPES: [ChainType; 6] = [
+pub const ALL_CHAIN_TYPES: [ChainType; 7] = [
     ChainType::Evm,
     ChainType::Solana,
     ChainType::Bitcoin,
     ChainType::Cosmos,
     ChainType::Tron,
     ChainType::Ton,
+    ChainType::Spark,
 ];
 
 /// A specific chain (e.g. "ethereum", "arbitrum") with its family type and CAIP-2 ID.
@@ -93,6 +95,11 @@ pub const KNOWN_CHAINS: &[Chain] = &[
         chain_type: ChainType::Ton,
         chain_id: "ton:mainnet",
     },
+    Chain {
+        name: "spark",
+        chain_type: ChainType::Spark,
+        chain_id: "spark:mainnet",
+    },
 ];
 
 /// Parse a chain string into a `Chain`. Accepts:
@@ -139,6 +146,7 @@ impl ChainType {
             ChainType::Bitcoin => "bip122",
             ChainType::Tron => "tron",
             ChainType::Ton => "ton",
+            ChainType::Spark => "spark",
         }
     }
 
@@ -151,6 +159,7 @@ impl ChainType {
             ChainType::Bitcoin => 0,
             ChainType::Tron => 195,
             ChainType::Ton => 607,
+            ChainType::Spark => 8797555,
         }
     }
 
@@ -163,6 +172,7 @@ impl ChainType {
             "bip122" => Some(ChainType::Bitcoin),
             "tron" => Some(ChainType::Tron),
             "ton" => Some(ChainType::Ton),
+            "spark" => Some(ChainType::Spark),
             _ => None,
         }
     }
@@ -177,6 +187,7 @@ impl fmt::Display for ChainType {
             ChainType::Bitcoin => "bitcoin",
             ChainType::Tron => "tron",
             ChainType::Ton => "ton",
+            ChainType::Spark => "spark",
         };
         write!(f, "{}", s)
     }
@@ -193,6 +204,7 @@ impl FromStr for ChainType {
             "bitcoin" => Ok(ChainType::Bitcoin),
             "tron" => Ok(ChainType::Tron),
             "ton" => Ok(ChainType::Ton),
+            "spark" => Ok(ChainType::Spark),
             _ => Err(format!("unknown chain type: {}", s)),
         }
     }
@@ -220,6 +232,7 @@ mod tests {
             (ChainType::Bitcoin, "\"bitcoin\""),
             (ChainType::Tron, "\"tron\""),
             (ChainType::Ton, "\"ton\""),
+            (ChainType::Spark, "\"spark\""),
         ] {
             let json = serde_json::to_string(&chain).unwrap();
             assert_eq!(json, expected);
@@ -236,6 +249,7 @@ mod tests {
         assert_eq!(ChainType::Bitcoin.namespace(), "bip122");
         assert_eq!(ChainType::Tron.namespace(), "tron");
         assert_eq!(ChainType::Ton.namespace(), "ton");
+        assert_eq!(ChainType::Spark.namespace(), "spark");
     }
 
     #[test]
@@ -246,6 +260,7 @@ mod tests {
         assert_eq!(ChainType::Bitcoin.default_coin_type(), 0);
         assert_eq!(ChainType::Tron.default_coin_type(), 195);
         assert_eq!(ChainType::Ton.default_coin_type(), 607);
+        assert_eq!(ChainType::Spark.default_coin_type(), 8797555);
     }
 
     #[test]
@@ -259,6 +274,7 @@ mod tests {
         );
         assert_eq!(ChainType::from_namespace("tron"), Some(ChainType::Tron));
         assert_eq!(ChainType::from_namespace("ton"), Some(ChainType::Ton));
+        assert_eq!(ChainType::from_namespace("spark"), Some(ChainType::Spark));
         assert_eq!(ChainType::from_namespace("unknown"), None);
     }
 
@@ -310,7 +326,7 @@ mod tests {
 
     #[test]
     fn test_all_chain_types() {
-        assert_eq!(ALL_CHAIN_TYPES.len(), 6);
+        assert_eq!(ALL_CHAIN_TYPES.len(), 7);
     }
 
     #[test]

@@ -99,6 +99,45 @@ mod integration_tests {
     }
 
     #[test]
+    fn test_full_pipeline_spark() {
+        let mnemonic = Mnemonic::from_phrase(ABANDON_PHRASE).unwrap();
+        let address = derive_address_for_chain(&mnemonic, ChainType::Spark);
+        assert!(
+            address.starts_with("spark:identity:"),
+            "Spark default address should start with spark:identity:, got: {}",
+            address
+        );
+    }
+
+    #[test]
+    fn test_spark_all_key_types() {
+        use chains::spark::{SparkKeyType, SparkSigner};
+
+        let mnemonic = Mnemonic::from_phrase(ABANDON_PHRASE).unwrap();
+        let mut addresses = Vec::new();
+        for key_type in &SparkKeyType::ALL {
+            let signer = SparkSigner::new(*key_type);
+            let path = signer.default_derivation_path(0);
+            let key =
+                HdDeriver::derive_from_mnemonic(&mnemonic, "", &path, Curve::Secp256k1).unwrap();
+            let address = signer.derive_address(key.expose()).unwrap();
+            assert!(
+                address.starts_with(&format!("spark:{}:", key_type.label())),
+                "unexpected prefix: {}",
+                address
+            );
+            addresses.push(address);
+        }
+        assert_eq!(addresses.len(), 5);
+        // All addresses should be distinct (different derivation paths → different keys)
+        for i in 0..addresses.len() {
+            for j in (i + 1)..addresses.len() {
+                assert_ne!(addresses[i], addresses[j]);
+            }
+        }
+    }
+
+    #[test]
     fn test_cross_chain_different_addresses() {
         let mnemonic = Mnemonic::from_phrase(ABANDON_PHRASE).unwrap();
 
@@ -108,6 +147,7 @@ mod integration_tests {
         let cosmos_addr = derive_address_for_chain(&mnemonic, ChainType::Cosmos);
         let tron_addr = derive_address_for_chain(&mnemonic, ChainType::Tron);
         let ton_addr = derive_address_for_chain(&mnemonic, ChainType::Ton);
+        let spark_addr = derive_address_for_chain(&mnemonic, ChainType::Spark);
 
         // All addresses should be different
         let addrs = vec![
@@ -117,6 +157,7 @@ mod integration_tests {
             &cosmos_addr,
             &tron_addr,
             &ton_addr,
+            &spark_addr,
         ];
         for i in 0..addrs.len() {
             for j in (i + 1)..addrs.len() {
@@ -142,6 +183,7 @@ mod integration_tests {
             ChainType::Bitcoin,
             ChainType::Cosmos,
             ChainType::Tron,
+            ChainType::Spark,
         ] {
             let signer = signer_for_chain(chain);
             let path = signer.default_derivation_path(0);
@@ -182,6 +224,7 @@ mod integration_tests {
             ChainType::Cosmos,
             ChainType::Tron,
             ChainType::Ton,
+            ChainType::Spark,
         ] {
             let signer = signer_for_chain(chain);
             assert_eq!(signer.chain_type(), chain);
