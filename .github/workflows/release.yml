@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   bump-version:
@@ -24,18 +25,26 @@ jobs:
       - name: Generate READMEs
         run: ./readme/generate.sh
 
-      - name: Commit version bump
+      - name: Create version bump PR
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           V="${GITHUB_REF_NAME#v}"
+          BRANCH="chore/bump-version-$V"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git diff --staged --quiet && exit 0
+          git diff --staged --quiet && echo "No version changes needed" && exit 0
+          git checkout -b "$BRANCH"
           git commit -m "chore: bump version to $V"
-          git push
+          git push origin "$BRANCH"
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore: bump version to $V" \
+            --body "Automated version bump triggered by release ${GITHUB_REF_NAME}."
 
   build:
-    needs: bump-version
     strategy:
       matrix:
         include:
@@ -96,7 +105,6 @@ jobs:
           path: ows/${{ matrix.asset }}
 
   python-wheels:
-    needs: bump-version
     strategy:
       matrix:
         include:
@@ -161,7 +169,6 @@ jobs:
         uses: pypa/gh-action-pypi-publish@ec4db0b4ddc65acdf4bff5fa45ac92d78b56bdf0 # v1.9.0
 
   node-addons:
-    needs: bump-version
     strategy:
       matrix:
         include:
@@ -310,7 +317,6 @@ jobs:
         run: npm publish --access public --ignore-scripts
 
   publish-crates:
-    needs: bump-version
     runs-on: ubuntu-latest
     environment: release
 
