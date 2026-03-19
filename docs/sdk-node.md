@@ -20,6 +20,7 @@ import {
   createWallet,
   listWallets,
   signMessage,
+  signTypedData,
   deleteWallet,
 } from "@open-wallet-standard/core";
 
@@ -89,7 +90,7 @@ const solAddr = deriveAddress(mnemonic, "solana");
 | Param | Type | Default | Description |
 |-------|------|---------|-------------|
 | `mnemonic` | `string` | &mdash; | BIP-39 mnemonic phrase |
-| `chain` | `string` | &mdash; | `"evm"`, `"solana"`, `"bitcoin"`, `"cosmos"`, `"tron"` |
+| `chain` | `string` | &mdash; | `"evm"`, `"solana"`, `"bitcoin"`, `"cosmos"`, `"tron"`, `"filecoin"` |
 | `index` | `number` | `0` | Account index in derivation path |
 
 **Returns:** `string`
@@ -109,6 +110,8 @@ console.log(wallet.accounts);
 //   { chainId: "bip122:000...", address: "bc1q...", derivationPath: "m/84'/0'/0'/0/0" },
 //   { chainId: "cosmos:cosmoshub-4", address: "cosmos1...", derivationPath: "m/44'/118'/0'/0/0" },
 //   { chainId: "tron:mainnet", address: "TKLm...", derivationPath: "m/44'/195'/0'/0/0" },
+//   { chainId: "ton:mainnet", address: "UQ...", derivationPath: "m/44'/607'/0'" },
+//   { chainId: "fil:mainnet", address: "f1...", derivationPath: "m/44'/461'/0'/0/0" },
 // ]
 ```
 
@@ -182,7 +185,7 @@ const keys = JSON.parse(keysJson);
 
 #### `importWalletMnemonic(name, mnemonic, passphrase?, index?, vaultPath?)`
 
-Import a wallet from a BIP-39 mnemonic. Derives all 6 chain accounts via HD paths.
+Import a wallet from a BIP-39 mnemonic. Derives all 7 chain accounts via HD paths.
 
 ```javascript
 const wallet = importWalletMnemonic("imported", "goose puzzle decorate ...");
@@ -192,7 +195,7 @@ const wallet = importWalletMnemonic("imported", "goose puzzle decorate ...");
 
 #### `importWalletPrivateKey(name, privateKeyHex, passphrase?, vaultPath?, chain?, secp256k1Key?, ed25519Key?)`
 
-Import a wallet from a hex-encoded private key. All 6 chains are supported: the provided key is used for its curve's chains, and a random key is generated for the other curve.
+Import a wallet from a hex-encoded private key. All 7 chains are supported: the provided key is used for its curve's chains, and a random key is generated for the other curve.
 
 The optional `chain` parameter specifies which chain the key originates from to determine the curve. Defaults to `"evm"` (secp256k1).
 
@@ -201,7 +204,7 @@ Alternatively, provide explicit keys for each curve via `secp256k1Key` and `ed25
 ```javascript
 // Import an EVM private key — generates a random Ed25519 key for Solana/TON
 const wallet = importWalletPrivateKey("from-evm", "4c0883a691...");
-console.log(wallet.accounts.length); // => 6
+console.log(wallet.accounts.length); // => 7
 
 // Import a Solana private key — generates a random secp256k1 key for EVM/BTC/etc.
 const wallet2 = importWalletPrivateKey(
@@ -224,7 +227,7 @@ console.log(wallet3.accounts.length); // => 6
 | `privateKeyHex` | `string` | &mdash; | Hex-encoded private key (with or without `0x` prefix). Ignored when both curve keys are provided. |
 | `passphrase` | `string` | `undefined` | Encryption passphrase |
 | `vaultPath` | `string` | `~/.ows/wallets` | Custom vault directory |
-| `chain` | `string` | `"evm"` | Source chain: `"evm"`, `"bitcoin"`, `"cosmos"`, `"tron"` (secp256k1) or `"solana"`, `"ton"` (Ed25519) |
+| `chain` | `string` | `"evm"` | Source chain: `"evm"`, `"bitcoin"`, `"cosmos"`, `"tron"`, `"filecoin"` (secp256k1) or `"solana"`, `"ton"` (Ed25519) |
 | `secp256k1Key` | `string` | `undefined` | Explicit secp256k1 private key (hex). Overrides random generation for secp256k1 chains. |
 | `ed25519Key` | `string` | `undefined` | Explicit Ed25519 private key (hex). Overrides random generation for Ed25519 chains. |
 
@@ -249,6 +252,43 @@ console.log(result.recoveryId); // 0 or 1
 | `message` | `string` | &mdash; | Message to sign |
 | `passphrase` | `string` | `undefined` | Decryption passphrase |
 | `encoding` | `string` | `"utf8"` | `"utf8"` or `"hex"` |
+| `index` | `number` | `0` | Account index |
+| `vaultPath` | `string` | `~/.ows/wallets` | Custom vault directory |
+
+**Returns:** `SignResult`
+
+#### `signTypedData(wallet, chain, typedDataJson, passphrase?, index?, vaultPath?)`
+
+Sign EIP-712 typed structured data (EVM only).
+
+```javascript
+const typedData = JSON.stringify({
+  types: {
+    EIP712Domain: [
+      { name: "name", type: "string" },
+      { name: "chainId", type: "uint256" },
+    ],
+    Transfer: [
+      { name: "to", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+  },
+  primaryType: "Transfer",
+  domain: { name: "MyDApp", chainId: "1" },
+  message: { to: "0xabc...", amount: "1000" },
+});
+
+const result = signTypedData("agent-treasury", "evm", typedData);
+console.log(result.signature);  // hex string
+console.log(result.recoveryId); // 27 or 28
+```
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `wallet` | `string` | &mdash; | Wallet name or ID |
+| `chain` | `string` | &mdash; | Must be an EVM chain |
+| `typedDataJson` | `string` | &mdash; | JSON string of EIP-712 typed data |
+| `passphrase` | `string` | `undefined` | Decryption passphrase |
 | `index` | `number` | `0` | Account index |
 | `vaultPath` | `string` | `~/.ows/wallets` | Custom vault directory |
 

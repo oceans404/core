@@ -56,6 +56,7 @@ ows sign tx --wallet agent-treasury --chain evm --tx-hex "deadbeef..."
 | Cosmos | secp256k1 | bech32 | `m/44'/118'/0'/0/0` |
 | Tron | secp256k1 | base58check | `m/44'/195'/0'/0/0` |
 | TON | Ed25519 | raw/bounceable | `m/44'/607'/0'` |
+| Filecoin | secp256k1 | f1 base32 | `m/44'/461'/0'/0/0` |
 
 ## CLI Reference
 

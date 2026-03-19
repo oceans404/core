@@ -9,6 +9,7 @@
 | `sign` (sign transaction) | Done | CLI `ows sign tx`, `ows-signer` trait |
 | `signAndSend` (sign + broadcast) | Done | CLI `ows sign send-tx`, per-chain broadcast |
 | `signMessage` (arbitrary message signing) | Done | CLI `ows sign message`, EIP-712 supported |
+| `signTypedData` (EIP-712 typed structured data) | Done | SDK-level API, CLI `--typed-data` flag |
 | EVM broadcast (`eth_sendRawTransaction`) | Done | `send_transaction.rs` |
 | Solana broadcast (`sendTransaction`) | Done | `send_transaction.rs` |
 | Bitcoin broadcast (mempool.space REST) | Done | `send_transaction.rs` |
@@ -141,6 +142,41 @@ Message signing follows chain-specific conventions:
 - **EVM**: `personal_sign` (EIP-191) or `eth_signTypedData_v4` (EIP-712)
 - **Solana**: Ed25519 signature over the raw message bytes
 - **Cosmos**: ADR-036 off-chain signing
+- **Filecoin**: Blake2b-256 hash then secp256k1 signing
+
+### `signTypedData(request: SignTypedDataRequest): Promise<SignMessageResult>`
+
+Signs EIP-712 typed structured data. This is a dedicated operation separate from `signMessage` to provide a clean SDK interface for typed data signing without overloading the message signing API.
+
+```typescript
+interface SignTypedDataRequest {
+  walletId: WalletId;
+  chainId: ChainId;                    // Must be an EVM chain
+  typedDataJson: string;               // JSON string of EIP-712 typed data
+}
+```
+
+The `typedDataJson` field must be a JSON string containing the standard EIP-712 fields: `types`, `primaryType`, `domain`, and `message`.
+
+```json
+{
+  "types": {
+    "EIP712Domain": [
+      {"name": "name", "type": "string"},
+      {"name": "chainId", "type": "uint256"}
+    ],
+    "Transfer": [
+      {"name": "to", "type": "address"},
+      {"name": "amount", "type": "uint256"}
+    ]
+  },
+  "primaryType": "Transfer",
+  "domain": {"name": "MyDApp", "chainId": "1"},
+  "message": {"to": "0xabc...", "amount": "1000"}
+}
+```
+
+Returns a `SignMessageResult` with the signature and recovery ID. Only supported for EVM chains — calling with a non-EVM chain returns a `CHAIN_NOT_SUPPORTED` error.
 
 ## SerializedTransaction Format
 

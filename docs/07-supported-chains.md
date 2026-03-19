@@ -8,8 +8,8 @@
 |---------|--------|-------|
 | CAIP-2 chain ID parsing (`namespace:reference`) | Done | `ows-core/src/caip.rs` |
 | CAIP-10 account IDs (`chain_id:address`) | Done | Stored in wallet `account_id` field |
-| Registered chain families (7 families, 13 networks) | Done | `ows-core/src/chain.rs` |
-| Per-chain signers (EVM, Solana, Bitcoin, Cosmos, Tron, TON, Spark) | Done | `ows-signer/src/chains/` |
+| Registered chain families (8 families, 14 networks) | Done | `ows-core/src/chain.rs` |
+| Per-chain signers (EVM, Solana, Bitcoin, Cosmos, Tron, TON, Spark, Filecoin) | Done | `ows-signer/src/chains/` |
 | HD derivation: BIP-32 (secp256k1) + SLIP-10 (ed25519) | Done | `ows-signer/src/hd.rs` |
 | Default RPC endpoints | Done | `ows-core/src/config.rs` |
 | User RPC overrides via config | Done | Merge semantics |
@@ -50,6 +50,7 @@ OWS groups chains into families that share a cryptographic curve and address der
 | Tron | secp256k1 | 195 | `m/44'/195'/0'/0/{index}` | Base58Check (`T...`) | `tron` |
 | TON | ed25519 | 607 | `m/44'/607'/{index}'` | Base64url wallet v5r1 (`UQ...`) | `ton` |
 | Spark | secp256k1 | 8797555 | `m/84'/0'/0'/0/{index}` | `spark:` + compressed pubkey hex | `spark` |
+| Filecoin | secp256k1 | 461 | `m/44'/461'/0'/0/{index}` | `f1` + base32(blake2b-160) | `fil` |
 
 ## Known Networks
 
@@ -77,6 +78,7 @@ Each network has a CAIP-2 chain ID and a default public RPC endpoint.
 | Tron | `tron:mainnet` | `https://api.trongrid.io` |
 | TON | `ton:mainnet` | `https://toncenter.com/api/v2` |
 | Spark | `spark:mainnet` | — |
+| Filecoin | `fil:mainnet` | `https://api.node.glif.io/rpc/v1` |
 
 Default endpoints are public, rate-limited, and suitable for development.
 
@@ -120,6 +122,7 @@ cosmos    → cosmos:cosmoshub-4
 tron      → tron:mainnet
 ton       → ton:mainnet
 spark     → spark:mainnet
+filecoin  → fil:mainnet
 ```
 
 Aliases MUST be resolved to full CAIP-2 identifiers before any processing. They MUST NOT appear in wallet files, policy files, or audit logs.
@@ -140,7 +143,8 @@ Master Seed (512 bits via PBKDF2)
     ├── m/44'/118'/0'/0/0   → Cosmos Account 0
     ├── m/44'/195'/0'/0/0   → Tron Account 0
     ├── m/44'/607'/0'       → TON Account 0
-    └── m/84'/0'/0'/0/0     → Spark Account 0
+    ├── m/84'/0'/0'/0/0     → Spark Account 0
+    └── m/44'/461'/0'/0/0   → Filecoin Account 0
 ```
 
 A single mnemonic derives accounts across all supported chains. The wallet file stores the encrypted mnemonic; the signer derives the appropriate private key using each chain's coin type and derivation path.
