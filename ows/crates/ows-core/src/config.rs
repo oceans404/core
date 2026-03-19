@@ -55,7 +55,10 @@ impl Config {
         );
         rpc.insert("tron:mainnet".into(), "https://api.trongrid.io".into());
         rpc.insert("ton:mainnet".into(), "https://toncenter.com/api/v2".into());
-        rpc.insert("fil:mainnet".into(), "https://api.node.glif.io/rpc/v1".into());
+        rpc.insert(
+            "fil:mainnet".into(),
+            "https://api.node.glif.io/rpc/v1".into(),
+        );
         rpc
     }
 }
