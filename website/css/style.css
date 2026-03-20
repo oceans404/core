@@ -707,6 +707,144 @@ code, pre {
   font-size: 1.25rem;
 }
 
+/* === Architecture Diagram === */
+.arch-diagram {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 3rem 0 2rem;
+  padding: 2.5rem 2rem;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: 16px;
+}
+
+.arch-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  width: 100%;
+}
+
+.arch-row--core {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+}
+
+.arch-connector {
+  display: flex;
+  justify-content: center;
+}
+
+.arch-connector-horiz {
+  display: flex;
+  align-items: center;
+  padding: 0 0.25rem;
+}
+
+.arch-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 1rem 1.5rem;
+  border-radius: 10px;
+  border: 1px solid var(--gray-200);
+  background: var(--white);
+  min-width: 160px;
+}
+
+.arch-node--agent {
+  background: var(--white);
+  border: 1px solid var(--gray-300);
+}
+
+.arch-node--interface {
+  background: var(--white);
+  border: 1px solid var(--gray-300);
+}
+
+.arch-node--policy {
+  border-color: var(--green);
+  background: #f0fdf4;
+}
+
+.arch-node--enclave {
+  border-color: var(--gray-800);
+  background: var(--gray-900);
+  color: var(--white);
+}
+
+.arch-node--enclave .arch-node-sub {
+  color: var(--gray-400);
+}
+
+.arch-node--vault {
+  border-color: var(--gray-400);
+  background: var(--gray-100);
+}
+
+.arch-node-icon {
+  margin-bottom: 0.5rem;
+}
+
+.arch-node-label {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin-bottom: 0.125rem;
+}
+
+.arch-node-sub {
+  font-size: 0.6875rem;
+  color: var(--gray-500);
+  font-family: var(--font-mono);
+}
+
+.arch-node-sub code {
+  font-size: 0.6875rem;
+  color: var(--gray-500);
+}
+
+.arch-boundary {
+  width: 100%;
+  margin-top: 1.25rem;
+  padding-top: 0.75rem;
+  border-top: 1.5px dashed var(--red);
+  text-align: center;
+}
+
+.arch-boundary-label {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--red);
+  letter-spacing: 0.02em;
+}
+
+@media (max-width: 768px) {
+  .arch-row--core {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .arch-connector-horiz {
+    transform: rotate(90deg);
+    padding: 0.25rem 0;
+  }
+
+  .arch-node {
+    min-width: 200px;
+  }
+
+  .arch-diagram {
+    padding: 1.5rem 1rem;
+  }
+}
+
 /* === Spec Cards === */
 .spec-grid {
   display: grid;
