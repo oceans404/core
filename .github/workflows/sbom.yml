@@ -1,0 +1,81 @@
+name: SBOM
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Rust toolchain
+        run: rustup update stable
+
+      - name: Install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx
+
+      - name: Cache cargo registry
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-sbom-cargo-${{ hashFiles('ows/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-sbom-cargo-
+
+      - name: Generate Rust workspace SBOM (CycloneDX)
+        working-directory: ows
+        run: cargo cyclonedx --format json --all
+
+      - name: Generate Node binding SBOM (CycloneDX)
+        working-directory: bindings/node
+        run: cargo cyclonedx --format json
+
+      - name: Generate Python binding SBOM (CycloneDX)
+        working-directory: bindings/python
+        run: cargo cyclonedx --format json
+
+      - name: Collect SBOMs
+        run: |
+          mkdir -p sbom-output
+
+          # Rust workspace crates (handles both bom.json and bom.cdx.json)
+          for dir in ows/crates/*/; do
+            crate=$(basename "$dir")
+            for ext in bom.cdx.json bom.json; do
+              if [ -f "$dir$ext" ]; then
+                cp "$dir$ext" "sbom-output/${crate}.cdx.json"
+                break
+              fi
+            done
+          done
+
+          # Bindings (handles both bom.json and bom.cdx.json)
+          for name in node python; do
+            for ext in bom.cdx.json bom.json; do
+              if [ -f "bindings/${name}/${ext}" ]; then
+                cp "bindings/${name}/${ext}" "sbom-output/ows-${name}.cdx.json"
+                break
+              fi
+            done
+          done
+
+      - name: Generate full-repo SBOM with Syft (SPDX)
+        uses: anchore/sbom-action@e11c554f704a0b820cbf8c51673f6945e0731532 # v0.20.0
+        with:
+          path: .
+          format: spdx-json
+          output-file: sbom-output/ows-full.spdx.json
+
+      - name: Upload SBOMs
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: sbom
+          path: sbom-output/
+          retention-days: 90

@@ -1,0 +1,67 @@
+name: Version Bump PR
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  version-bump-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+          token: ${{ secrets.PRIVATE_REPOS_WRITE_PR }}
+
+      - name: Set up Node.js (for npm/jq in set-version)
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: "22"
+
+      - name: Bump version in source files
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          "$GITHUB_WORKSPACE/scripts/set-version.sh" "$V" --all
+
+      - name: Generate READMEs
+        run: ./readme/generate.sh
+
+      - name: Create Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.PRIVATE_REPOS_WRITE_PR }}
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          BRANCH="chore/bump-version-${V}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          if git diff --staged --quiet; then
+            echo "No version changes needed"
+            exit 0
+          fi
+
+          git checkout -b "$BRANCH"
+          git commit -m "chore: bump version to $V"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "chore: bump version to $V" \
+            --body "## Summary
+
+          Automated version bump to \`$V\` triggered by tag [\`${GITHUB_REF_NAME}\`](https://github.com/${{ github.repository }}/releases/tag/${GITHUB_REF_NAME}).
+
+          ### Changes
+          - Rust crate versions (\`Cargo.toml\`)
+          - Python binding version (\`pyproject.toml\`, \`Cargo.toml\`)
+          - Node binding version (\`package.json\`, \`Cargo.toml\`, platform packages)
+          - Skill manifest version (\`SKILL.md\`)
+          - Regenerated READMEs" \
+            --base main \
+            --head "$BRANCH"
