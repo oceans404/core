@@ -1,7 +1,9 @@
 pub mod config;
 pub mod derive;
+pub mod fund;
 pub mod generate;
 pub mod info;
+pub mod pay;
 pub mod send_transaction;
 pub mod sign_message;
 pub mod sign_transaction;

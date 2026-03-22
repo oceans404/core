@@ -33,6 +33,16 @@ enum Commands {
         #[command(subcommand)]
         subcommand: MnemonicCommands,
     },
+    /// Fund a wallet with USDC via MoonPay
+    Fund {
+        #[command(subcommand)]
+        subcommand: FundCommands,
+    },
+    /// Pay for x402-enabled API calls
+    Pay {
+        #[command(subcommand)]
+        subcommand: PayCommands,
+    },
     /// View configuration and RPC endpoints
     Config {
         #[command(subcommand)]
@@ -201,6 +211,64 @@ enum MnemonicCommands {
 }
 
 #[derive(Subcommand)]
+enum FundCommands {
+    /// Create a MoonPay deposit — generates multi-chain deposit addresses that auto-convert to USDC
+    Deposit {
+        /// Wallet name or ID
+        #[arg(long, env = "OWS_WALLET")]
+        wallet: String,
+        /// Target chain (default: base)
+        #[arg(long, default_value = "base")]
+        chain: String,
+        /// Token to receive (default: USDC)
+        #[arg(long, default_value = "USDC")]
+        token: String,
+    },
+    /// Check token balances for a wallet
+    Balance {
+        /// Wallet name or ID
+        #[arg(long, env = "OWS_WALLET")]
+        wallet: String,
+        /// Chain to check (default: base)
+        #[arg(long, default_value = "base")]
+        chain: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum PayCommands {
+    /// Make a paid request to an x402-enabled API endpoint
+    Request {
+        /// The URL to request
+        url: String,
+        /// Wallet name or ID
+        #[arg(long, env = "OWS_WALLET")]
+        wallet: String,
+        /// HTTP method
+        #[arg(long, default_value = "GET")]
+        method: String,
+        /// Request body (JSON)
+        #[arg(long)]
+        body: Option<String>,
+        /// Skip passphrase prompt (use empty passphrase)
+        #[arg(long)]
+        no_passphrase: bool,
+    },
+    /// Discover x402-enabled services from the Bazaar directory
+    Discover {
+        /// Search query (filters by URL and description)
+        #[arg(long)]
+        query: Option<String>,
+        /// Max results per page (default 100)
+        #[arg(long)]
+        limit: Option<u64>,
+        /// Offset into results for pagination
+        #[arg(long)]
+        offset: Option<u64>,
+    },
+}
+
+#[derive(Subcommand)]
 enum ConfigCommands {
     /// Show current configuration and RPC endpoints
     Show,
@@ -224,6 +292,8 @@ enum CliError {
     Io(#[from] std::io::Error),
     #[error("{0}")]
     Json(#[from] serde_json::Error),
+    #[error("{0}")]
+    Pay(#[from] ows_pay::PayError),
     #[error("{0}")]
     InvalidArgs(String),
 }
@@ -323,6 +393,30 @@ fn run(cli: Cli) -> Result<(), CliError> {
                 json,
                 rpc_url.as_deref(),
             ),
+        },
+        Commands::Fund { subcommand } => match subcommand {
+            FundCommands::Deposit {
+                wallet,
+                chain,
+                token,
+            } => commands::fund::run(&wallet, Some(&chain), Some(&token)),
+            FundCommands::Balance { wallet, chain } => {
+                commands::fund::balance(&wallet, Some(&chain))
+            }
+        },
+        Commands::Pay { subcommand } => match subcommand {
+            PayCommands::Request {
+                url,
+                wallet,
+                method,
+                body,
+                no_passphrase,
+            } => commands::pay::run(&url, &wallet, &method, body.as_deref(), no_passphrase),
+            PayCommands::Discover {
+                query,
+                limit,
+                offset,
+            } => commands::pay::discover(query.as_deref(), limit, offset),
         },
         Commands::Mnemonic { subcommand } => match subcommand {
             MnemonicCommands::Generate { words } => commands::generate::run(words),

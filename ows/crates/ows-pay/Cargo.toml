@@ -1,0 +1,26 @@
+[package]
+name = "ows-pay"
+version = "0.3.9"
+edition = "2021"
+license = "MIT"
+description = "Payment client for the Open Wallet Standard (x402)"
+repository = "https://github.com/open-wallet-standard/core"
+
+[dependencies]
+# HTTP
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Encoding
+base64 = "0.22"
+hex = "0.4"
+
+# Errors
+thiserror = "2"
+
+# Random nonce generation
+getrandom = "0.2"

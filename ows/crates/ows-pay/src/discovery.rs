@@ -1,0 +1,305 @@
+use crate::error::{PayError, PayErrorCode};
+use crate::types::{DiscoverResult, DiscoveryResponse, Protocol, Service};
+
+const CDP_DISCOVERY_URL: &str = "https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources";
+
+const TESTNETS: &[&str] = &[
+    "base-sepolia",
+    "eip155:84532",
+    "eip155:11155111",
+    "solana-devnet",
+];
+
+// ===========================================================================
+// Unified discovery (public API)
+// ===========================================================================
+
+/// Discover payable services.
+///
+/// Fetches the x402 directory with the given pagination parameters,
+/// filters testnets, and returns services with pagination metadata.
+pub async fn discover_all(
+    query: Option<&str>,
+    limit: Option<u64>,
+    offset: Option<u64>,
+) -> Result<DiscoverResult, PayError> {
+    let limit = limit.unwrap_or(100);
+    let offset = offset.unwrap_or(0);
+
+    let resp = fetch_x402(limit, offset).await?;
+    let total = resp.total;
+
+    let mut services = Vec::new();
+
+    for svc in resp.items {
+        let accept = match svc.accepts.first() {
+            Some(a) => a,
+            None => continue,
+        };
+
+        let is_testnet = TESTNETS.iter().any(|t| accept.network.contains(t));
+        if is_testnet {
+            continue;
+        }
+
+        if let Some(q) = query {
+            let q = q.to_lowercase();
+            let url_match = svc.resource.to_lowercase().contains(&q);
+            let accepts_desc = accept
+                .description
+                .as_ref()
+                .map(|d| d.to_lowercase().contains(&q))
+                .unwrap_or(false);
+            let meta_desc = svc
+                .metadata
+                .as_ref()
+                .and_then(|m| m.description.as_ref())
+                .map(|d| d.to_lowercase().contains(&q))
+                .unwrap_or(false);
+            if !url_match && !accepts_desc && !meta_desc {
+                continue;
+            }
+        }
+
+        let desc = accept
+            .description
+            .as_deref()
+            .or_else(|| svc.metadata.as_ref().and_then(|m| m.description.as_deref()))
+            .unwrap_or("");
+
+        services.push(Service {
+            protocol: Protocol::X402,
+            name: svc.resource.clone(),
+            url: svc.resource,
+            description: truncate(desc, 80),
+            price: format_usdc(&accept.amount),
+            network: accept.network.clone(),
+            tags: vec![],
+        });
+    }
+
+    Ok(DiscoverResult {
+        services,
+        total,
+        limit,
+        offset,
+    })
+}
+
+// ===========================================================================
+// x402 fetching (internal)
+// ===========================================================================
+
+struct FetchResult {
+    items: Vec<crate::types::DiscoveredService>,
+    total: u64,
+}
+
+async fn fetch_x402(limit: u64, offset: u64) -> Result<FetchResult, PayError> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(CDP_DISCOVERY_URL)
+        .query(&[("limit", limit.to_string()), ("offset", offset.to_string())])
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(PayError::new(
+            PayErrorCode::DiscoveryFailed,
+            format!("x402 discovery returned {status}: {body}"),
+        ));
+    }
+
+    let body: DiscoveryResponse = resp.json().await.map_err(|e| {
+        PayError::new(
+            PayErrorCode::DiscoveryFailed,
+            format!("failed to parse x402 discovery: {e}"),
+        )
+    })?;
+
+    let total = body.pagination.map(|p| p.total).unwrap_or(0);
+
+    Ok(FetchResult {
+        items: body.items,
+        total,
+    })
+}
+
+// ===========================================================================
+// Formatting helpers
+// ===========================================================================
+
+pub(crate) fn format_usdc(amount_str: &str) -> String {
+    let amount: u128 = amount_str.parse().unwrap_or(0);
+    let whole = amount / 1_000_000;
+    let frac = amount % 1_000_000;
+    let frac_str = format!("{frac:06}");
+    let trimmed = frac_str.trim_end_matches('0');
+    let trimmed = if trimmed.is_empty() { "00" } else { trimmed };
+    format!("${whole}.{trimmed}")
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    let first_line = s.lines().next().unwrap_or("");
+    if first_line.len() > max {
+        format!("{}...", &first_line[..max.saturating_sub(3)])
+    } else {
+        first_line.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -----------------------------------------------------------------------
+    // format_usdc
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn format_usdc_zero() {
+        assert_eq!(format_usdc("0"), "$0.00");
+    }
+
+    #[test]
+    fn format_usdc_one_cent() {
+        assert_eq!(format_usdc("10000"), "$0.01");
+    }
+
+    #[test]
+    fn format_usdc_one_dollar() {
+        assert_eq!(format_usdc("1000000"), "$1.00");
+    }
+
+    #[test]
+    fn format_usdc_fractional() {
+        assert_eq!(format_usdc("1500000"), "$1.5");
+    }
+
+    #[test]
+    fn format_usdc_large() {
+        assert_eq!(format_usdc("100000000"), "$100.00");
+    }
+
+    #[test]
+    fn format_usdc_sub_cent() {
+        assert_eq!(format_usdc("1"), "$0.000001");
+    }
+
+    #[test]
+    fn format_usdc_non_numeric() {
+        assert_eq!(format_usdc("abc"), "$0.00");
+    }
+
+    #[test]
+    fn format_usdc_empty() {
+        assert_eq!(format_usdc(""), "$0.00");
+    }
+
+    // -----------------------------------------------------------------------
+    // truncate
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn truncate_short_string() {
+        assert_eq!(truncate("hello", 80), "hello");
+    }
+
+    #[test]
+    fn truncate_long_string() {
+        let long = "a".repeat(100);
+        let result = truncate(&long, 20);
+        assert!(result.len() <= 20);
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn truncate_multiline_uses_first_line() {
+        assert_eq!(truncate("first\nsecond\nthird", 80), "first");
+    }
+
+    #[test]
+    fn truncate_empty() {
+        assert_eq!(truncate("", 80), "");
+    }
+
+    // -----------------------------------------------------------------------
+    // testnet filtering (unit-level, no network)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn testnet_list_contains_expected_entries() {
+        assert!(TESTNETS.contains(&"base-sepolia"));
+        assert!(TESTNETS.contains(&"eip155:84532"));
+        assert!(TESTNETS.contains(&"eip155:11155111"));
+        assert!(TESTNETS.contains(&"solana-devnet"));
+    }
+
+    #[test]
+    fn testnet_check_matches() {
+        let network = "base-sepolia";
+        assert!(TESTNETS.iter().any(|t| network.contains(t)));
+    }
+
+    #[test]
+    fn mainnet_check_does_not_match() {
+        let network = "base";
+        assert!(!TESTNETS.iter().any(|t| network.contains(t)));
+    }
+
+    // -----------------------------------------------------------------------
+    // discover_all (live, ignored by default)
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_discover_returns_services() {
+        let result = discover_all(None, Some(10), Some(0)).await.unwrap();
+        assert!(result.total > 0);
+        assert!(!result.services.is_empty());
+        assert_eq!(result.limit, 10);
+        assert_eq!(result.offset, 0);
+
+        // No testnets should appear.
+        for svc in &result.services {
+            assert!(
+                !TESTNETS.iter().any(|t| svc.network.contains(t)),
+                "testnet {} leaked through",
+                svc.network
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_discover_pagination() {
+        let page1 = discover_all(None, Some(5), Some(0)).await.unwrap();
+        let page2 = discover_all(None, Some(5), Some(5)).await.unwrap();
+
+        // Pages should have same total.
+        assert_eq!(page1.total, page2.total);
+
+        // Pages should have different services (unless one is empty due to testnet filtering).
+        if !page1.services.is_empty() && !page2.services.is_empty() {
+            assert_ne!(page1.services[0].url, page2.services[0].url);
+        }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_discover_query_filters() {
+        let result = discover_all(Some("heurist"), Some(50), Some(0))
+            .await
+            .unwrap();
+        for svc in &result.services {
+            let combined = format!("{} {}", svc.url, svc.description).to_lowercase();
+            assert!(
+                combined.contains("heurist"),
+                "service should match query: {}",
+                svc.url
+            );
+        }
+    }
+}
