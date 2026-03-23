@@ -18,6 +18,9 @@ jobs:
           ref: main
           token: ${{ secrets.PRIVATE_REPOS_WRITE_PR }}
 
+      - name: Set up Rust (for cargo update in set-version)
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Set up Node.js (for npm/jq in set-version)
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:

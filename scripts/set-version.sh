@@ -24,6 +24,7 @@ set_python_version() {
     "$REPO_ROOT/bindings/python/Cargo.toml"
   rm -f "$REPO_ROOT/bindings/python/pyproject.toml.bak" \
         "$REPO_ROOT/bindings/python/Cargo.toml.bak"
+  (cd "$REPO_ROOT/bindings/python" && cargo update --workspace)
 }
 
 set_node_version() {
@@ -41,6 +42,8 @@ set_node_version() {
   jq --arg v "$VERSION" \
     '.optionalDependencies |= with_entries(.value = $v)' \
     package.json > tmp.json && mv tmp.json package.json
+
+  cargo update --workspace
 }
 
 set_rust_version() {
@@ -59,6 +62,8 @@ set_rust_version() {
       "$crates_dir/$crate/Cargo.toml"
     rm -f "$crates_dir/$crate/Cargo.toml.bak"
   done
+
+  (cd "$REPO_ROOT/ows" && cargo update --workspace)
 }
 
 set_skill_version() {
