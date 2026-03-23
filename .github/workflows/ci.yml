@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Rust toolchain
-        run: rustup update stable
+        run: rustup show active-toolchain || rustup install
 
       - name: Cache cargo registry and build
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
@@ -62,7 +62,7 @@ jobs:
           node-version: "22"
 
       - name: Install Rust toolchain
-        run: rustup update stable
+        run: rustup show active-toolchain || rustup install
 
       - name: Cache cargo registry and build
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
@@ -96,7 +96,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Install Rust toolchain
-        run: rustup update stable
+        run: rustup show active-toolchain || rustup install
 
       - name: Cache cargo registry and build
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
