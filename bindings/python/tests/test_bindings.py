@@ -1,5 +1,6 @@
 """Tests for ows Python bindings."""
 
+import json
 import tempfile
 import pytest
 import ows
@@ -123,3 +124,79 @@ def test_sign_message(vault_dir):
         "msg-signer", "evm", "hello world", vault_path_opt=vault_dir
     )
     assert len(result["signature"]) > 0
+
+
+def test_sign_typed_data_with_api_key(vault_dir):
+    wallet = ows.create_wallet("td-api-test", vault_path_opt=vault_dir)
+
+    # Register a policy allowing Base chains
+    ows.create_policy(json.dumps({
+        "id": "td-base-only",
+        "name": "Base Only",
+        "version": 1,
+        "created_at": "2026-03-22T00:00:00Z",
+        "rules": [
+            {"type": "allowed_chains", "chain_ids": ["eip155:8453", "eip155:84532"]},
+        ],
+        "action": "deny",
+    }), vault_path_opt=vault_dir)
+
+    # Create API key bound to the wallet and policy
+    key = ows.create_api_key(
+        "td-agent", [wallet["id"]], ["td-base-only"], "",
+        vault_path_opt=vault_dir,
+    )
+    assert key["token"].startswith("ows_key_")
+
+    # EIP-712 typed data (the standard "Mail" example)
+    typed_data_json = json.dumps({
+        "types": {
+            "EIP712Domain": [
+                {"name": "name", "type": "string"},
+                {"name": "version", "type": "string"},
+                {"name": "chainId", "type": "uint256"},
+                {"name": "verifyingContract", "type": "address"},
+            ],
+            "Person": [
+                {"name": "name", "type": "string"},
+                {"name": "wallet", "type": "address"},
+            ],
+            "Mail": [
+                {"name": "from", "type": "Person"},
+                {"name": "to", "type": "Person"},
+                {"name": "contents", "type": "string"},
+            ],
+        },
+        "primaryType": "Mail",
+        "domain": {
+            "name": "Ether Mail",
+            "version": "1",
+            "chainId": 8453,
+            "verifyingContract": "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC",
+        },
+        "message": {
+            "from": {"name": "Cow", "wallet": "0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826"},
+            "to": {"name": "Bob", "wallet": "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB"},
+            "contents": "Hello, Bob!",
+        },
+    })
+
+    # Sign on allowed chain -- should succeed
+    result = ows.sign_typed_data(
+        wallet["id"], "base", typed_data_json,
+        passphrase=key["token"], vault_path_opt=vault_dir,
+    )
+    assert len(result["signature"]) > 0
+    assert result["recovery_id"] is not None
+
+    # Sign on denied chain -- should fail
+    with pytest.raises(Exception, match="not in allowlist"):
+        ows.sign_typed_data(
+            wallet["id"], "ethereum", typed_data_json,
+            passphrase=key["token"], vault_path_opt=vault_dir,
+        )
+
+    # Cleanup
+    ows.revoke_api_key(key["id"], vault_path_opt=vault_dir)
+    ows.delete_policy("td-base-only", vault_path_opt=vault_dir)
+    ows.delete_wallet(wallet["id"], vault_path_opt=vault_dir)

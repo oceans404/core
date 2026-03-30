@@ -17,6 +17,7 @@ import {
   importWalletPrivateKey,
   signTransaction,
   signMessage,
+  signTypedData,
   createPolicy,
   listPolicies,
   getPolicy,
@@ -345,6 +346,75 @@ describe('@open-wallet-standard/core', () => {
 
     revokeApiKey(key.id, vaultDir);
     deletePolicy('test-imported-wallet', vaultDir);
+    deleteWallet(wallet.id, vaultDir);
+  });
+
+  it('signs EIP-712 typed data with an API key token', () => {
+    const wallet = createWallet('typed-data-api', undefined, 12, vaultDir);
+
+    // Register a policy allowing Base chains
+    createPolicy(JSON.stringify({
+      id: 'td-base-only',
+      name: 'Base Only',
+      version: 1,
+      created_at: '2026-03-22T00:00:00Z',
+      rules: [
+        { type: 'allowed_chains', chain_ids: ['eip155:8453', 'eip155:84532'] },
+      ],
+      action: 'deny',
+    }), vaultDir);
+
+    // Create API key bound to the wallet and policy
+    const key = createApiKey('td-agent', [wallet.id], ['td-base-only'], '', null, vaultDir);
+    assert.ok(key.token.startsWith('ows_key_'));
+
+    // EIP-712 typed data (the standard "Mail" example)
+    const typedDataJson = JSON.stringify({
+      types: {
+        EIP712Domain: [
+          { name: 'name', type: 'string' },
+          { name: 'version', type: 'string' },
+          { name: 'chainId', type: 'uint256' },
+          { name: 'verifyingContract', type: 'address' },
+        ],
+        Person: [
+          { name: 'name', type: 'string' },
+          { name: 'wallet', type: 'address' },
+        ],
+        Mail: [
+          { name: 'from', type: 'Person' },
+          { name: 'to', type: 'Person' },
+          { name: 'contents', type: 'string' },
+        ],
+      },
+      primaryType: 'Mail',
+      domain: {
+        name: 'Ether Mail',
+        version: '1',
+        chainId: 8453,
+        verifyingContract: '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC',
+      },
+      message: {
+        from: { name: 'Cow', wallet: '0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826' },
+        to: { name: 'Bob', wallet: '0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB' },
+        contents: 'Hello, Bob!',
+      },
+    });
+
+    // Sign on allowed chain — should succeed
+    const sig = signTypedData(wallet.id, 'base', typedDataJson, key.token, null, vaultDir);
+    assert.ok(sig.signature.length > 0, 'signature should be non-empty');
+    assert.ok(sig.recoveryId != null, 'recoveryId should be present for EIP-712');
+
+    // Sign on denied chain — should fail
+    assert.throws(
+      () => signTypedData(wallet.id, 'ethereum', typedDataJson, key.token, null, vaultDir),
+      (err) => err.message.includes('not in allowlist'),
+    );
+
+    // Cleanup
+    revokeApiKey(key.id, vaultDir);
+    deletePolicy('td-base-only', vaultDir);
     deleteWallet(wallet.id, vaultDir);
   });
 
