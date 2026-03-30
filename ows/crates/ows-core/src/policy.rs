@@ -16,6 +16,10 @@ pub enum PolicyRule {
 
     /// Deny if current time is past the timestamp.
     ExpiresAt { timestamp: String },
+
+    /// Deny typed data signing if `domain.verifyingContract` is not in the allowlist.
+    /// Passes through for non-typed-data signing operations.
+    AllowedTypedDataContracts { contracts: Vec<String> },
 }
 
 /// A stored policy definition.
@@ -302,6 +306,19 @@ mod tests {
         assert!(!json.contains("domain_chain_id"));
         assert!(!json.contains("domain_name"));
         assert!(!json.contains("domain_version"));
+    }
+
+    #[test]
+    fn test_policy_rule_serde_allowed_typed_data_contracts() {
+        let rule = PolicyRule::AllowedTypedDataContracts {
+            contracts: vec!["0x000000000022D473030F116dDEE9F6B43aC78BA3".into()],
+        };
+        let json = serde_json::to_value(&rule).unwrap();
+        assert_eq!(json["type"], "allowed_typed_data_contracts");
+        assert_eq!(json["contracts"][0], "0x000000000022D473030F116dDEE9F6B43aC78BA3");
+
+        let deserialized: PolicyRule = serde_json::from_value(json).unwrap();
+        assert_eq!(deserialized, rule);
     }
 
     #[test]
