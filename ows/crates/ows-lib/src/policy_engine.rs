@@ -65,7 +65,10 @@ fn eval_expires_at(policy_id: &str, timestamp: &str, ctx: &PolicyContext) -> Pol
         (Ok(_), Ok(_)) => PolicyResult::allowed(),
         _ => PolicyResult::denied(
             policy_id,
-            format!("invalid timestamp in expiry check: ctx={}, rule={}", ctx.timestamp, timestamp),
+            format!(
+                "invalid timestamp in expiry check: ctx={}, rule={}",
+                ctx.timestamp, timestamp
+            ),
         ),
     }
 }
