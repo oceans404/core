@@ -88,10 +88,7 @@ fn eval_allowed_typed_data_contracts(
     };
 
     let contract_lower = contract.to_lowercase();
-    if contracts
-        .iter()
-        .any(|c| c.to_lowercase() == contract_lower)
-    {
+    if contracts.iter().any(|c| c.to_lowercase() == contract_lower) {
         PolicyResult::allowed()
     } else {
         PolicyResult::denied(

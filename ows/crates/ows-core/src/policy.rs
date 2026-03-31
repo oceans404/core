@@ -277,7 +277,8 @@ mod tests {
             primary_type: "PermitSingle".into(),
             domain_name: Some("Permit2".into()),
             domain_version: Some("1".into()),
-            raw_json: r#"{"types":{},"primaryType":"PermitSingle","domain":{},"message":{}}"#.into(),
+            raw_json: r#"{"types":{},"primaryType":"PermitSingle","domain":{},"message":{}}"#
+                .into(),
         };
 
         let json = serde_json::to_string(&ctx).unwrap();
@@ -315,7 +316,10 @@ mod tests {
         };
         let json = serde_json::to_value(&rule).unwrap();
         assert_eq!(json["type"], "allowed_typed_data_contracts");
-        assert_eq!(json["contracts"][0], "0x000000000022D473030F116dDEE9F6B43aC78BA3");
+        assert_eq!(
+            json["contracts"][0],
+            "0x000000000022D473030F116dDEE9F6B43aC78BA3"
+        );
 
         let deserialized: PolicyRule = serde_json::from_value(json).unwrap();
         assert_eq!(deserialized, rule);

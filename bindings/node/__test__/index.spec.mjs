@@ -407,8 +407,14 @@ describe('@open-wallet-standard/core', () => {
     assert.ok(sig.recoveryId != null, 'recoveryId should be present for EIP-712');
 
     // Sign on denied chain — should fail
+    // Build typed data with chainId=1 matching ethereum so the domain check passes
+    // and AllowedChains (base-only) correctly denies
+    const ethTypedDataJson = JSON.stringify({
+      ...JSON.parse(typedDataJson),
+      domain: { ...JSON.parse(typedDataJson).domain, chainId: 1 },
+    });
     assert.throws(
-      () => signTypedData(wallet.id, 'ethereum', typedDataJson, key.token, null, vaultDir),
+      () => signTypedData(wallet.id, 'ethereum', ethTypedDataJson, key.token, null, vaultDir),
       (err) => err.message.includes('not in allowlist'),
     );
 

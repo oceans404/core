@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use ows_core::{ApiKeyFile, EncryptedWallet, OwsError};
+use ows_signer::eip712;
 use ows_signer::{
     decrypt, encrypt_with_hkdf, signer_for_chain, CryptoEnvelope, HdDeriver, Mnemonic, SecretBytes,
 };
-use ows_signer::eip712;
 
 use crate::error::OwsLibError;
 use crate::key_store;
@@ -249,11 +249,11 @@ pub fn sign_typed_data_with_api_key(
 
     // 5b. Validate domain.chainId matches the requested chain (if present)
     // Prevents bypassing AllowedChains by submitting typed data with a different chainId
-    if let Some(domain_chain_id) = parsed
-        .domain
-        .get("chainId")
-        .and_then(|v| v.as_str().and_then(|s| s.parse::<u64>().ok()).or_else(|| v.as_u64()))
-    {
+    if let Some(domain_chain_id) = parsed.domain.get("chainId").and_then(|v| {
+        v.as_str()
+            .and_then(|s| s.parse::<u64>().ok())
+            .or_else(|| v.as_u64())
+    }) {
         let expected_chain_id = chain
             .chain_id
             .split(':')
@@ -278,10 +278,11 @@ pub fn sign_typed_data_with_api_key(
             .get("verifyingContract")
             .and_then(|v| v.as_str())
             .map(String::from),
-        domain_chain_id: parsed
-            .domain
-            .get("chainId")
-            .and_then(|v| v.as_str().and_then(|s| s.parse::<u64>().ok()).or_else(|| v.as_u64())),
+        domain_chain_id: parsed.domain.get("chainId").and_then(|v| {
+            v.as_str()
+                .and_then(|s| s.parse::<u64>().ok())
+                .or_else(|| v.as_u64())
+        }),
         primary_type: parsed.primary_type.clone(),
         domain_name: parsed
             .domain
@@ -931,9 +932,7 @@ mod tests {
                     chain_ids: vec!["eip155:8453".to_string()],
                 },
                 PolicyRule::AllowedTypedDataContracts {
-                    contracts: vec![
-                        "0x000000000022D473030F116dDEE9F6B43aC78BA3".to_string(),
-                    ],
+                    contracts: vec!["0x000000000022D473030F116dDEE9F6B43aC78BA3".to_string()],
                 },
             ],
             executable: None,
@@ -952,13 +951,28 @@ mod tests {
         let wallet_id = setup_test_wallet(&vault, passphrase);
         let policy_id = setup_typed_data_policy(&vault);
         let (token, _) = create_api_key(
-            "td-agent", &[wallet_id], &[policy_id], passphrase, None, Some(&vault),
-        ).unwrap();
+            "td-agent",
+            &[wallet_id],
+            &[policy_id],
+            passphrase,
+            None,
+            Some(&vault),
+        )
+        .unwrap();
         let chain = ows_core::parse_chain("base").unwrap();
         let result = sign_typed_data_with_api_key(
-            &token, "test-wallet", &chain, &test_typed_data_json(), None, Some(&vault),
+            &token,
+            "test-wallet",
+            &chain,
+            &test_typed_data_json(),
+            None,
+            Some(&vault),
         );
-        assert!(result.is_ok(), "sign_typed_data_with_api_key failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "sign_typed_data_with_api_key failed: {:?}",
+            result.err()
+        );
         let sign_result = result.unwrap();
         assert!(!sign_result.signature.is_empty());
         let v = sign_result.recovery_id.unwrap();
@@ -973,11 +987,22 @@ mod tests {
         let wallet_id = setup_test_wallet(&vault, passphrase);
         let policy_id = setup_test_policy(&vault);
         let (token, _) = create_api_key(
-            "agent", &[wallet_id], &[policy_id], passphrase, None, Some(&vault),
-        ).unwrap();
+            "agent",
+            &[wallet_id],
+            &[policy_id],
+            passphrase,
+            None,
+            Some(&vault),
+        )
+        .unwrap();
         let chain = ows_core::parse_chain("solana").unwrap();
         let result = sign_typed_data_with_api_key(
-            &token, "test-wallet", &chain, &test_typed_data_json(), None, Some(&vault),
+            &token,
+            "test-wallet",
+            &chain,
+            &test_typed_data_json(),
+            None,
+            Some(&vault),
         );
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
@@ -992,8 +1017,14 @@ mod tests {
         let wallet_id = setup_test_wallet(&vault, passphrase);
         let policy_id = setup_typed_data_policy(&vault);
         let (token, _) = create_api_key(
-            "agent", &[wallet_id], &[policy_id], passphrase, None, Some(&vault),
-        ).unwrap();
+            "agent",
+            &[wallet_id],
+            &[policy_id],
+            passphrase,
+            None,
+            Some(&vault),
+        )
+        .unwrap();
         let wrong_contract_td = serde_json::json!({
             "types": {
                 "EIP712Domain": [
@@ -1008,10 +1039,16 @@ mod tests {
                 "verifyingContract": "0x00000000000000ADc04C56Bf30aC9d3c0aAF14dC"
             },
             "message": {"maker": "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD0C"}
-        }).to_string();
+        })
+        .to_string();
         let chain = ows_core::parse_chain("base").unwrap();
         let result = sign_typed_data_with_api_key(
-            &token, "test-wallet", &chain, &wrong_contract_td, None, Some(&vault),
+            &token,
+            "test-wallet",
+            &chain,
+            &wrong_contract_td,
+            None,
+            Some(&vault),
         );
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -1030,11 +1067,22 @@ mod tests {
         let wallet_id = setup_test_wallet(&vault, passphrase);
         let policy_id = setup_test_policy(&vault);
         let (token, _) = create_api_key(
-            "agent", &[wallet_id], &[policy_id], passphrase, None, Some(&vault),
-        ).unwrap();
+            "agent",
+            &[wallet_id],
+            &[policy_id],
+            passphrase,
+            None,
+            Some(&vault),
+        )
+        .unwrap();
         let chain = ows_core::parse_chain("base").unwrap();
         let result = sign_typed_data_with_api_key(
-            &token, "test-wallet", &chain, "not valid json", None, Some(&vault),
+            &token,
+            "test-wallet",
+            &chain,
+            "not valid json",
+            None,
+            Some(&vault),
         );
         assert!(result.is_err());
     }
@@ -1047,11 +1095,22 @@ mod tests {
         let wallet_id = setup_test_wallet(&vault, passphrase);
         let policy_id = setup_test_policy(&vault);
         let (token, _) = create_api_key(
-            "agent", &[wallet_id], &[policy_id], passphrase, Some("2020-01-01T00:00:00Z"), Some(&vault),
-        ).unwrap();
+            "agent",
+            &[wallet_id],
+            &[policy_id],
+            passphrase,
+            Some("2020-01-01T00:00:00Z"),
+            Some(&vault),
+        )
+        .unwrap();
         let chain = ows_core::parse_chain("base").unwrap();
         let result = sign_typed_data_with_api_key(
-            &token, "test-wallet", &chain, &test_typed_data_json(), None, Some(&vault),
+            &token,
+            "test-wallet",
+            &chain,
+            &test_typed_data_json(),
+            None,
+            Some(&vault),
         );
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -1071,19 +1130,36 @@ mod tests {
         let envelope2 = encrypt(mnemonic2.as_bytes(), passphrase).unwrap();
         let crypto2 = serde_json::to_value(&envelope2).unwrap();
         let wallet2 = EncryptedWallet::new(
-            "wallet-2-id".to_string(), "other-wallet".to_string(), vec![], crypto2, KeyType::Mnemonic,
+            "wallet-2-id".to_string(),
+            "other-wallet".to_string(),
+            vec![],
+            crypto2,
+            KeyType::Mnemonic,
         );
         vault::save_encrypted_wallet(&wallet2, Some(&vault)).unwrap();
         let (token, _) = create_api_key(
-            "agent", &[wallet_id], &[policy_id], passphrase, None, Some(&vault),
-        ).unwrap();
+            "agent",
+            &[wallet_id],
+            &[policy_id],
+            passphrase,
+            None,
+            Some(&vault),
+        )
+        .unwrap();
         let chain = ows_core::parse_chain("base").unwrap();
         let result = sign_typed_data_with_api_key(
-            &token, "other-wallet", &chain, &test_typed_data_json(), None, Some(&vault),
+            &token,
+            "other-wallet",
+            &chain,
+            &test_typed_data_json(),
+            None,
+            Some(&vault),
         );
         assert!(result.is_err());
         match result.unwrap_err() {
-            OwsLibError::InvalidInput(msg) => { assert!(msg.contains("does not have access")); }
+            OwsLibError::InvalidInput(msg) => {
+                assert!(msg.contains("does not have access"));
+            }
             other => panic!("expected InvalidInput, got: {other}"),
         }
     }
@@ -1098,8 +1174,14 @@ mod tests {
         // so the only gate is AllowedChains
         let policy_id = setup_test_policy(&vault); // allows eip155:8453
         let (token, _) = create_api_key(
-            "agent", &[wallet_id], &[policy_id], passphrase, None, Some(&vault),
-        ).unwrap();
+            "agent",
+            &[wallet_id],
+            &[policy_id],
+            passphrase,
+            None,
+            Some(&vault),
+        )
+        .unwrap();
 
         // Typed data has domain.chainId = 1 (mainnet), but we request chain = base (8453)
         let mismatched_td = serde_json::json!({
@@ -1118,15 +1200,24 @@ mod tests {
                 "verifyingContract": "0x000000000022D473030F116dDEE9F6B43aC78BA3"
             },
             "message": {"spender": "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD0C"}
-        }).to_string();
+        })
+        .to_string();
 
         let chain = ows_core::parse_chain("base").unwrap(); // eip155:8453
         let result = sign_typed_data_with_api_key(
-            &token, "test-wallet", &chain, &mismatched_td, None, Some(&vault),
+            &token,
+            "test-wallet",
+            &chain,
+            &mismatched_td,
+            None,
+            Some(&vault),
         );
 
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
-        assert!(err_msg.contains("domain chainId"), "expected chain mismatch error, got: {err_msg}");
+        assert!(
+            err_msg.contains("domain chainId"),
+            "expected chain mismatch error, got: {err_msg}"
+        );
     }
 }
