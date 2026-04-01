@@ -592,6 +592,21 @@ mod tests {
     }
 
     #[test]
+    fn allowed_typed_data_contracts_empty_list_denies_everything() {
+        let mut ctx = base_context();
+        ctx.typed_data = Some(typed_data_context(Some(
+            "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        )));
+        let policy = policy_with_rules(
+            "td",
+            vec![PolicyRule::AllowedTypedDataContracts { contracts: vec![] }],
+        );
+        let result = evaluate_policies(&[policy], &ctx);
+        assert!(!result.allow);
+        assert!(result.reason.unwrap().contains("not in allowed list"));
+    }
+
+    #[test]
     fn combined_rules_with_typed_data_contracts() {
         let mut ctx = base_context();
         ctx.typed_data = Some(typed_data_context(Some(
