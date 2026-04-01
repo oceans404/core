@@ -128,7 +128,7 @@ Time-bound access (compares `PolicyContext.timestamp` to this ISO-8601 string).
 
 ### `allowed_typed_data_contracts`
 
-Restricts which smart contracts an API key can sign EIP-712 typed data for. The rule checks the `domain.verifyingContract` field of the typed data against a whitelist of addresses.
+Restricts which smart contracts an API key can sign EIP-712 typed data for. The rule checks the `domain.verifyingContract` field of the typed data against an allowlist of addresses.
 
 ```json
 {
