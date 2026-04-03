@@ -5,7 +5,7 @@
 //! based on the x402 `scheme` field.
 //!
 //! ```ignore
-//! let result = ows_pay::pay(&wallet, "https://api.example.com/data", "GET", None).await?;
+//! let result = ows_pay::pay(&wallet, "https://api.example.com/data", "GET", None, None).await?;
 //! let services = ows_pay::discover(None, None, None).await?;
 //! ```
 
@@ -32,6 +32,7 @@ pub async fn pay(
     url: &str,
     method: &str,
     body: Option<&str>,
+    network: Option<&str>,
 ) -> Result<PayResult, PayError> {
     let client = reqwest::Client::new();
 
@@ -57,7 +58,7 @@ pub async fn pay(
     let body_402 = initial.text().await.unwrap_or_default();
 
     // Step 4: Handle x402 payment.
-    x402::handle_x402(wallet, url, method, body, &headers, &body_402).await
+    x402::handle_x402(wallet, url, method, body, &headers, &body_402, network).await
 }
 
 /// Discover payable services.

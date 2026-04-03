@@ -293,6 +293,42 @@ impl ChainSigner for StellarSigner {
     }
 }
 
+impl StellarSigner {
+    /// Sign a Soroban authorization entry preimage.
+    ///
+    /// Signs a Soroban authorization entry preimage.
+    ///
+    /// `preimage_xdr` must be the full `HashIdPreimage::SorobanAuthorization` XDR
+    /// (i.e. the output of `HashIdPreimage::SorobanAuthorization(...).to_xdr()`),
+    /// which starts with the `ENVELOPE_TYPE_SOROBAN_AUTHORIZATION` discriminant and
+    /// includes the network_id field.
+    ///
+    /// Computes: Ed25519_sign(SHA256(preimage_xdr))
+    /// This matches stellar-base's `authorizeEntry` which does `hash(HashIdPreimage.toXDR())`.
+    pub fn sign_soroban_auth(
+        &self,
+        private_key: &[u8],
+        preimage_xdr: &[u8],
+    ) -> Result<SignOutput, SignerError> {
+        if preimage_xdr.is_empty() {
+            return Err(SignerError::InvalidTransaction(
+                "auth entry preimage must not be empty".into(),
+            ));
+        }
+
+        let signing_key = Self::signing_key(private_key)?;
+        let hash: [u8; 32] = Sha256::digest(preimage_xdr).into();
+        let signature = signing_key.sign(&hash);
+        let pubkey_bytes = signing_key.verifying_key().to_bytes().to_vec();
+
+        Ok(SignOutput {
+            signature: signature.to_bytes().to_vec(),
+            recovery_id: None,
+            public_key: Some(pubkey_bytes),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -867,5 +903,83 @@ mod tests {
 
         let futurenet = StellarSigner::futurenet();
         assert_eq!(futurenet.network_passphrase, STELLAR_PASSPHRASE_FUTURENET);
+    }
+
+    // --- sign_soroban_auth tests ---
+
+    #[test]
+    fn test_sign_soroban_auth_empty_input_errors() {
+        let privkey = test_privkey();
+        let signer = StellarSigner::testnet();
+        assert!(signer.sign_soroban_auth(&privkey, b"").is_err());
+    }
+
+    #[test]
+    fn test_sign_soroban_auth_produces_64_byte_sig() {
+        let privkey = test_privkey();
+        let signer = StellarSigner::testnet();
+        let preimage = b"fake soroban auth preimage xdr bytes";
+
+        let result = signer.sign_soroban_auth(&privkey, preimage).unwrap();
+        assert_eq!(result.signature.len(), 64);
+        assert!(result.recovery_id.is_none());
+        assert!(result.public_key.is_some());
+        assert_eq!(result.public_key.as_ref().unwrap().len(), 32);
+    }
+
+    #[test]
+    fn test_sign_soroban_auth_deterministic() {
+        let privkey = test_privkey();
+        let signer = StellarSigner::testnet();
+        let preimage = b"deterministic test preimage";
+
+        let sig1 = signer.sign_soroban_auth(&privkey, preimage).unwrap();
+        let sig2 = signer.sign_soroban_auth(&privkey, preimage).unwrap();
+        assert_eq!(sig1.signature, sig2.signature);
+    }
+
+    #[test]
+    fn test_sign_soroban_auth_invalid_key() {
+        let signer = StellarSigner::testnet();
+        assert!(signer.sign_soroban_auth(&[], b"some preimage").is_err());
+        assert!(signer.sign_soroban_auth(&[0u8; 16], b"some preimage").is_err());
+    }
+
+    #[test]
+    fn test_sign_soroban_auth_equivalence() {
+        // Verify that sign_soroban_auth produces the same result as manually computing
+        // SHA256(network_id || 0x00000009 || preimage) and Ed25519 signing that hash.
+        let privkey = test_privkey();
+        let signer = StellarSigner::testnet();
+        let preimage = b"equivalence test soroban auth preimage";
+
+        let result = signer.sign_soroban_auth(&privkey, preimage).unwrap();
+
+        // Manually compute the expected signature
+        let network_id: [u8; 32] =
+            Sha256::digest(STELLAR_PASSPHRASE_TESTNET.as_bytes()).into();
+
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&network_id);
+        payload.extend_from_slice(&0x00000009u32.to_be_bytes());
+        payload.extend_from_slice(preimage);
+
+        let hash: [u8; 32] = Sha256::digest(&payload).into();
+
+        let signing_key = SigningKey::from_bytes(&privkey.try_into().unwrap());
+        let expected_sig = signing_key.sign(&hash);
+
+        assert_eq!(
+            result.signature,
+            expected_sig.to_bytes().to_vec(),
+            "sign_soroban_auth must match manual SHA256(network_id || ENVELOPE_TYPE_SOROBAN_AUTHORIZATION || preimage) signing"
+        );
+
+        // Also verify the signature is valid using the verifying key
+        let verifying_key = signing_key.verifying_key();
+        let sig = ed25519_dalek::Signature::from_bytes(&result.signature.try_into().unwrap());
+        verifying_key
+            .verify(&hash, &sig)
+            .expect("soroban auth signature should verify against the computed hash");
     }
 }

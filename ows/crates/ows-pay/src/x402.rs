@@ -21,12 +21,13 @@ pub(crate) async fn handle_x402(
     req_body: Option<&str>,
     resp_headers: &reqwest::header::HeaderMap,
     body_402: &str,
+    preferred_network: Option<&str>,
 ) -> Result<PayResult, PayError> {
     let (x402_version, resource, requirements) = parse_requirements(resp_headers, body_402)?;
-    let (req, network) = pick_payment_option(wallet, &requirements)?;
+    let (req, network) = pick_payment_option(wallet, &requirements, preferred_network)?;
 
     let (payload, payment_info) =
-        build_signed_payment(wallet, req, &network, x402_version, resource)?;
+        build_signed_payment(wallet, req, &network, x402_version, resource).await?;
 
     let payload_json = serde_json::to_string(&payload)?;
     let payload_b64 = B64.encode(payload_json.as_bytes());
@@ -52,7 +53,7 @@ pub(crate) async fn handle_x402(
 // ---------------------------------------------------------------------------
 
 /// Build a signed payment payload, dispatching on the scheme.
-fn build_signed_payment(
+async fn build_signed_payment(
     wallet: &dyn WalletAccess,
     req: &PaymentRequirements,
     network: &str,
@@ -60,7 +61,21 @@ fn build_signed_payment(
     resource: Option<serde_json::Value>,
 ) -> Result<(PaymentPayload, PaymentInfo), PayError> {
     match req.scheme.as_str() {
-        "exact" => build_evm_exact(wallet, req, network, x402_version, resource),
+        "exact" => {
+            let chain_type = chains::resolve_chain_type(network);
+            match chain_type {
+                Some(ows_core::ChainType::Stellar) => {
+                    build_stellar_exact(wallet, req, network, x402_version, resource).await
+                }
+                Some(ows_core::ChainType::Evm) | None => {
+                    build_evm_exact(wallet, req, network, x402_version, resource)
+                }
+                Some(_) => Err(PayError::new(
+                    PayErrorCode::UnsupportedChain,
+                    format!("exact scheme not yet supported for {network}"),
+                )),
+            }
+        }
         scheme => Err(PayError::new(
             PayErrorCode::ProtocolUnknown,
             format!("unsupported payment scheme: {scheme}"),
@@ -183,6 +198,610 @@ fn build_evm_exact(
 }
 
 // ---------------------------------------------------------------------------
+// Stellar "exact" (Soroban token transfer)
+// ---------------------------------------------------------------------------
+
+use stellar_xdr::curr::{
+    self as xdr, ContractId, Hash, HostFunction, Int128Parts, InvokeContractArgs,
+    InvokeHostFunctionOp, LedgerEntryData, Limits, MuxedAccount, Operation, OperationBody,
+    Preconditions, ReadXdr, ScAddress, ScSymbol, ScVal, SequenceNumber,
+    SorobanAuthorizationEntry, SorobanCredentials, SorobanTransactionData, TimeBounds,
+    TimePoint, Transaction, TransactionEnvelope, TransactionExt, TransactionV1Envelope,
+    Uint256, VecM, WriteXdr,
+};
+
+/// Parsed result from `simulateTransaction` JSON-RPC.
+struct SimulationResult {
+    /// Base64-encoded `SorobanTransactionData` XDR.
+    transaction_data: String,
+    /// Minimum resource fee (stroops).
+    min_resource_fee: u32,
+    /// Base64-encoded `SorobanAuthorizationEntry` XDR strings.
+    auth_entries: Vec<String>,
+    /// Latest ledger seen by the RPC node.
+    latest_ledger: u32,
+}
+
+async fn build_stellar_exact(
+    wallet: &dyn WalletAccess,
+    req: &PaymentRequirements,
+    network: &str,
+    x402_version: u32,
+    resource: Option<serde_json::Value>,
+) -> Result<(PaymentPayload, PaymentInfo), PayError> {
+    let account = wallet.account(network)?;
+    let rpc_url = stellar_rpc_url(network)?;
+    let client = reqwest::Client::new();
+
+    // 1. Parse addresses
+    let from_addr = stellar_address_to_sc_address(&account.address)?;
+    let to_addr = stellar_address_to_sc_address(&req.pay_to)?;
+    let contract_addr = stellar_contract_to_sc_address(&req.asset)?;
+
+    // 3. Build amount as ScVal::I128
+    let amount: i128 = req.amount.parse().map_err(|_| {
+        PayError::new(PayErrorCode::ProtocolMalformed, "invalid amount")
+    })?;
+    let amount_val = i128_to_sc_val(amount);
+
+    // 4. Build InvokeHostFunctionOp for transfer(from, to, amount)
+    let invoke_args = InvokeContractArgs {
+        contract_address: match contract_addr {
+            ScAddress::Contract(_) => contract_addr,
+            _ => {
+                return Err(PayError::new(
+                    PayErrorCode::ProtocolMalformed,
+                    "asset must be a contract address",
+                ))
+            }
+        },
+        function_name: ScSymbol("transfer".try_into().map_err(|_| {
+            PayError::new(PayErrorCode::ProtocolMalformed, "bad function name")
+        })?),
+        args: vec![
+            ScVal::Address(from_addr),
+            ScVal::Address(to_addr),
+            amount_val,
+        ]
+        .try_into()
+        .map_err(|_| {
+            PayError::new(PayErrorCode::ProtocolMalformed, "too many args")
+        })?,
+    };
+
+    let op = Operation {
+        source_account: None,
+        body: OperationBody::InvokeHostFunction(InvokeHostFunctionOp {
+            host_function: HostFunction::InvokeContract(invoke_args),
+            auth: VecM::default(),
+        }),
+    };
+
+    // 5. Build transaction.
+    // Use the null account (all-zero key) as source so Soroban issues Address credentials
+    // for the payer rather than SourceAccount credentials. The facilitator fee-bumps with
+    // its own source/sequence; this inner tx only needs to be simulatable.
+    let tx = Transaction {
+        source_account: MuxedAccount::Ed25519(Uint256([0u8; 32])),
+        fee: 100_000,
+        seq_num: SequenceNumber(0),
+        cond: Preconditions::Time(TimeBounds {
+            min_time: TimePoint(0),
+            max_time: TimePoint(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+                    + req.max_timeout_seconds as u64,
+            ),
+        }),
+        memo: xdr::Memo::None,
+        operations: vec![op].try_into().map_err(|_| {
+            PayError::new(PayErrorCode::ProtocolMalformed, "bad ops")
+        })?,
+        ext: TransactionExt::V0,
+    };
+
+    let envelope = TransactionEnvelope::Tx(TransactionV1Envelope {
+        tx: tx.clone(),
+        signatures: VecM::default(),
+    });
+    let tx_xdr_b64 = B64.encode(
+        envelope
+            .to_xdr(Limits::none())
+            .map_err(|e| PayError::new(PayErrorCode::ProtocolMalformed, format!("xdr encode: {e}")))?,
+    );
+
+    // 6. Simulate transaction via Soroban RPC
+    let sim = soroban_rpc_simulate(&client, &rpc_url, &tx_xdr_b64).await?;
+
+    // 7. Sign auth entries from simulation
+    // Use a conservative ledger-close estimate (6s) so the expiration doesn't exceed
+    // the facilitator's dynamically-computed maxLedger (which samples real close times).
+    // A too-generous estimate (e.g. 5s) causes "signature_expiration_too_far" rejections.
+    let estimated_ledger_secs: u32 = 6;
+    let max_ledger = sim.latest_ledger
+        + (req.max_timeout_seconds as u32 + estimated_ledger_secs - 1) / estimated_ledger_secs;
+    let signed_auth = sign_sim_auth_entries(wallet, network, &sim.auth_entries, max_ledger)?;
+
+    // 8. Assemble transaction with footprint + signed auth (use first sim fee for now)
+    let assembled_tx = assemble_stellar_tx(tx, &sim, signed_auth)?;
+
+    // 9. Re-simulate with the fully assembled transaction to get an accurate resource fee.
+    //    The first simulation overestimates because auth entries aren't signed yet;
+    //    the second simulation accounts for the actual signed auth XDR size.
+    let assembled_envelope = TransactionEnvelope::Tx(TransactionV1Envelope {
+        tx: assembled_tx.clone(),
+        signatures: VecM::default(),
+    });
+    let assembled_b64 = B64.encode(
+        assembled_envelope
+            .to_xdr(Limits::none())
+            .map_err(|e| PayError::new(PayErrorCode::ProtocolMalformed, format!("assembled xdr: {e}")))?,
+    );
+    let sim2 = soroban_rpc_simulate(&client, &rpc_url, &assembled_b64).await?;
+
+    // Update both the sorobanData ext AND the fee from the second simulation.
+    // The first sim overestimates sorobanData.resourceFee (auth entries aren't signed yet).
+    // If we keep sim1's sorobanData but use sim2's fee, the network rejects the tx because
+    // tx.fee < sorobanData.resourceFee + base_fee (33148 < 141529 + 100).
+    // sim2 has the same footprint but an accurate resourceFee for the signed-auth tx.
+    let soroban_data2_bytes = B64.decode(&sim2.transaction_data).map_err(|e| {
+        PayError::new(PayErrorCode::ProtocolMalformed, format!("bad sim2 soroban tx data: {e}"))
+    })?;
+    let soroban_data2 =
+        SorobanTransactionData::from_xdr(&soroban_data2_bytes, Limits::none()).map_err(|e| {
+            PayError::new(PayErrorCode::ProtocolMalformed, format!("bad sim2 soroban data xdr: {e}"))
+        })?;
+    let mut final_tx = assembled_tx;
+    final_tx.ext = TransactionExt::V1(soroban_data2);
+    final_tx.fee = 100u32.saturating_add(sim2.min_resource_fee);
+
+    let final_envelope = TransactionEnvelope::Tx(TransactionV1Envelope {
+        tx: final_tx,
+        signatures: VecM::default(),
+    });
+    let xdr_base64 = B64.encode(
+        final_envelope
+            .to_xdr(Limits::none())
+            .map_err(|e| PayError::new(PayErrorCode::ProtocolMalformed, format!("final xdr: {e}")))?,
+    );
+
+    // 9. Build payment payload
+    let inner = serde_json::json!({ "transaction": xdr_base64 });
+
+    let payload = if x402_version >= 2 {
+        PaymentPayload::V2(PaymentPayloadV2 {
+            x402_version,
+            accepted: req.clone(),
+            resource,
+            payload: inner,
+        })
+    } else {
+        PaymentPayload::V1(PaymentPayloadV1 {
+            x402_version,
+            scheme: req.scheme.clone(),
+            network: req.network.clone(),
+            payload: inner,
+        })
+    };
+
+    let amount_display = crate::discovery::format_usdc(&req.amount);
+    let payment_info = PaymentInfo {
+        amount: amount_display,
+        network: chains::display_name(network).to_string(),
+        token: "USDC".to_string(),
+    };
+
+    Ok((payload, payment_info))
+}
+
+// ---------------------------------------------------------------------------
+// Stellar helpers
+// ---------------------------------------------------------------------------
+
+fn stellar_rpc_url(network: &str) -> Result<String, PayError> {
+    if let Ok(url) = std::env::var("OWS_STELLAR_RPC_URL") {
+        return Ok(url);
+    }
+    match network {
+        "stellar:pubnet" => Ok("https://soroban-rpc.mainnet.stellar.gateway.fm".into()),
+        "stellar:testnet" => Ok("https://soroban-testnet.stellar.org".into()),
+        "stellar:futurenet" => Ok("https://rpc-futurenet.stellar.org".into()),
+        _ => Err(PayError::new(
+            PayErrorCode::UnsupportedChain,
+            format!("no known Soroban RPC for network: {network}"),
+        )),
+    }
+}
+
+fn stellar_network_passphrase(network: &str) -> Result<&'static str, PayError> {
+    match network {
+        "stellar:pubnet" => Ok(ows_core::STELLAR_PASSPHRASE_PUBNET),
+        "stellar:testnet" => Ok(ows_core::STELLAR_PASSPHRASE_TESTNET),
+        "stellar:futurenet" => Ok(ows_core::STELLAR_PASSPHRASE_FUTURENET),
+        _ => Err(PayError::new(
+            PayErrorCode::UnsupportedChain,
+            format!("no known passphrase for network: {network}"),
+        )),
+    }
+}
+
+fn stellar_address_to_sc_address(addr: &str) -> Result<ScAddress, PayError> {
+    let pk = stellar_strkey::ed25519::PublicKey::from_string(addr).map_err(|e| {
+        PayError::new(
+            PayErrorCode::ProtocolMalformed,
+            format!("invalid Stellar address '{addr}': {e}"),
+        )
+    })?;
+    Ok(ScAddress::Account(xdr::AccountId(
+        xdr::PublicKey::PublicKeyTypeEd25519(Uint256(pk.0)),
+    )))
+}
+
+fn stellar_contract_to_sc_address(addr: &str) -> Result<ScAddress, PayError> {
+    let contract = stellar_strkey::Contract::from_string(addr).map_err(|e| {
+        PayError::new(
+            PayErrorCode::ProtocolMalformed,
+            format!("invalid Stellar contract '{addr}': {e}"),
+        )
+    })?;
+    Ok(ScAddress::Contract(ContractId(Hash(contract.0))))
+}
+
+fn i128_to_sc_val(amount: i128) -> ScVal {
+    ScVal::I128(Int128Parts {
+        hi: (amount >> 64) as i64,
+        lo: amount as u64,
+    })
+}
+
+async fn soroban_rpc_get_account(
+    client: &reqwest::Client,
+    rpc_url: &str,
+    address: &str,
+) -> Result<i64, PayError> {
+    let pk = stellar_strkey::ed25519::PublicKey::from_string(address).map_err(|e| {
+        PayError::new(
+            PayErrorCode::ProtocolMalformed,
+            format!("bad address for getAccount: {e}"),
+        )
+    })?;
+
+    // Build the LedgerKey::Account XDR, then base64-encode it for getLedgerEntries
+    let account_id = xdr::AccountId(xdr::PublicKey::PublicKeyTypeEd25519(Uint256(pk.0)));
+    let ledger_key = xdr::LedgerKey::Account(xdr::LedgerKeyAccount { account_id });
+    let key_xdr_b64 = B64.encode(
+        ledger_key
+            .to_xdr(Limits::none())
+            .map_err(|e| PayError::new(PayErrorCode::ProtocolMalformed, format!("xdr key: {e}")))?,
+    );
+
+    let body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "getLedgerEntries",
+        "params": {
+            "keys": [key_xdr_b64]
+        }
+    });
+
+    let resp: serde_json::Value = client
+        .post(rpc_url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| PayError::new(PayErrorCode::HttpTransport, format!("rpc getAccount: {e}")))?
+        .json()
+        .await
+        .map_err(|e| {
+            PayError::new(
+                PayErrorCode::ProtocolMalformed,
+                format!("rpc getAccount parse: {e}"),
+            )
+        })?;
+
+    if let Some(err) = resp.get("error") {
+        return Err(PayError::new(
+            PayErrorCode::ProtocolMalformed,
+            format!("rpc getAccount error: {err}"),
+        ));
+    }
+
+    // Parse the account entry to extract sequence number
+    let entry_xdr_b64 = resp
+        .pointer("/result/entries/0/xdr")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            PayError::new(
+                PayErrorCode::ProtocolMalformed,
+                format!("account not found on ledger: {address}"),
+            )
+        })?;
+
+    let entry_bytes = B64.decode(entry_xdr_b64).map_err(|e| {
+        PayError::new(
+            PayErrorCode::ProtocolMalformed,
+            format!("bad ledger entry base64: {e}"),
+        )
+    })?;
+    let entry_data = LedgerEntryData::from_xdr(&entry_bytes, Limits::none()).map_err(|e| {
+        PayError::new(
+            PayErrorCode::ProtocolMalformed,
+            format!("bad ledger entry xdr: {e}"),
+        )
+    })?;
+
+    match entry_data {
+        LedgerEntryData::Account(acct) => Ok(acct.seq_num.0),
+        _ => Err(PayError::new(
+            PayErrorCode::ProtocolMalformed,
+            "expected account ledger entry",
+        )),
+    }
+}
+
+async fn soroban_rpc_simulate(
+    client: &reqwest::Client,
+    rpc_url: &str,
+    tx_xdr_b64: &str,
+) -> Result<SimulationResult, PayError> {
+    let body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "simulateTransaction",
+        "params": {
+            "transaction": tx_xdr_b64
+        }
+    });
+
+    let resp: serde_json::Value = client
+        .post(rpc_url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| PayError::new(PayErrorCode::HttpTransport, format!("rpc simulate: {e}")))?
+        .json()
+        .await
+        .map_err(|e| {
+            PayError::new(
+                PayErrorCode::ProtocolMalformed,
+                format!("rpc simulate parse: {e}"),
+            )
+        })?;
+
+    if let Some(err) = resp.get("error") {
+        return Err(PayError::new(
+            PayErrorCode::ProtocolMalformed,
+            format!("rpc simulate error: {err}"),
+        ));
+    }
+
+    let result = resp
+        .get("result")
+        .ok_or_else(|| {
+            PayError::new(
+                PayErrorCode::ProtocolMalformed,
+                "simulateTransaction: missing result",
+            )
+        })?;
+
+    // Check for restore/error in the simulation result itself
+    if let Some(err_str) = result.get("error").and_then(|v| v.as_str()) {
+        return Err(PayError::new(
+            PayErrorCode::ProtocolMalformed,
+            format!("simulation failed: {err_str}"),
+        ));
+    }
+
+    let transaction_data = result
+        .get("transactionData")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let min_resource_fee: u32 = result
+        .get("minResourceFee")
+        .and_then(|v| v.as_str().or_else(|| v.as_u64().map(|_| "")))
+        .and_then(|s| {
+            if s.is_empty() {
+                result
+                    .get("minResourceFee")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as u32)
+            } else {
+                s.parse().ok()
+            }
+        })
+        .unwrap_or(0);
+
+    // Auth entries from results[0].auth[]
+    let auth_entries: Vec<String> = result
+        .pointer("/results/0/auth")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let latest_ledger: u32 = result
+        .get("latestLedger")
+        .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+        .unwrap_or(0) as u32;
+
+    Ok(SimulationResult {
+        transaction_data,
+        min_resource_fee,
+        auth_entries,
+        latest_ledger,
+    })
+}
+
+fn sign_sim_auth_entries(
+    wallet: &dyn WalletAccess,
+    network: &str,
+    entries: &[String],
+    max_ledger: u32,
+) -> Result<Vec<SorobanAuthorizationEntry>, PayError> {
+    let mut signed = Vec::with_capacity(entries.len());
+
+    for entry_b64 in entries {
+        let entry_bytes = B64.decode(entry_b64).map_err(|e| {
+            PayError::new(
+                PayErrorCode::ProtocolMalformed,
+                format!("bad auth entry base64: {e}"),
+            )
+        })?;
+        let mut entry =
+            SorobanAuthorizationEntry::from_xdr(&entry_bytes, Limits::none()).map_err(|e| {
+                PayError::new(
+                    PayErrorCode::ProtocolMalformed,
+                    format!("bad auth entry xdr: {e}"),
+                )
+            })?;
+
+        match &mut entry.credentials {
+            SorobanCredentials::Address(ref mut addr_creds) => {
+                // Set expiration ledger
+                addr_creds.signature_expiration_ledger = max_ledger;
+
+                // Build the preimage that needs signing
+                let passphrase = stellar_network_passphrase(network)?;
+                let network_id = Hash(
+                    <sha2::Sha256 as sha2::Digest>::digest(passphrase.as_bytes()).into(),
+                );
+
+                let preimage = xdr::HashIdPreimage::SorobanAuthorization(
+                    xdr::HashIdPreimageSorobanAuthorization {
+                        network_id,
+                        nonce: addr_creds.nonce,
+                        signature_expiration_ledger: max_ledger,
+                        invocation: entry.root_invocation.clone(),
+                    },
+                );
+
+                let preimage_xdr_bytes = preimage.to_xdr(Limits::none()).map_err(|e| {
+                    PayError::new(
+                        PayErrorCode::ProtocolMalformed,
+                        format!("preimage xdr: {e}"),
+                    )
+                })?;
+                let preimage_b64 = B64.encode(&preimage_xdr_bytes);
+
+                // Sign via wallet
+                let sig_b64 = wallet.sign_stellar_auth(network, &preimage_b64)?;
+                let sig_bytes = B64.decode(&sig_b64).map_err(|e| {
+                    PayError::new(
+                        PayErrorCode::SigningFailed,
+                        format!("bad signature base64: {e}"),
+                    )
+                })?;
+
+                // Get the public key for the account
+                let account_address = match &addr_creds.address {
+                    ScAddress::Account(acct_id) => match &acct_id.0 {
+                        xdr::PublicKey::PublicKeyTypeEd25519(Uint256(bytes)) => bytes.clone(),
+                    },
+                    _ => {
+                        // Contract or other address auth — no signing needed, keep as-is
+                        signed.push(entry);
+                        continue;
+                    }
+                };
+
+                // Soroban expects: ScVal::Vec([ScVal::Map({public_key: Bytes, signature: Bytes})])
+                // A Vec of signature entries — same format as stellar-base authorizeEntry().
+                let sig_map = ScVal::Map(Some(
+                    vec![
+                        xdr::ScMapEntry {
+                            key: ScVal::Symbol(ScSymbol("public_key".try_into().map_err(
+                                |_| PayError::new(PayErrorCode::ProtocolMalformed, "bad symbol"),
+                            )?)),
+                            val: ScVal::Bytes(
+                                account_address.to_vec().try_into().map_err(|_| {
+                                    PayError::new(
+                                        PayErrorCode::ProtocolMalformed,
+                                        "bad pubkey bytes",
+                                    )
+                                })?,
+                            ),
+                        },
+                        xdr::ScMapEntry {
+                            key: ScVal::Symbol(ScSymbol("signature".try_into().map_err(
+                                |_| PayError::new(PayErrorCode::ProtocolMalformed, "bad symbol"),
+                            )?)),
+                            val: ScVal::Bytes(sig_bytes.try_into().map_err(|_| {
+                                PayError::new(PayErrorCode::SigningFailed, "signature too large")
+                            })?),
+                        },
+                    ]
+                    .try_into()
+                    .map_err(|_| PayError::new(PayErrorCode::ProtocolMalformed, "bad sig map"))?,
+                ));
+
+                addr_creds.signature = ScVal::Vec(Some(
+                    vec![sig_map]
+                        .try_into()
+                        .map_err(|_| PayError::new(PayErrorCode::ProtocolMalformed, "bad sig vec"))?,
+                ));
+            }
+            SorobanCredentials::SourceAccount => {
+                // Source account auth — no additional signing needed
+            }
+        }
+
+        signed.push(entry);
+    }
+
+    Ok(signed)
+}
+
+fn assemble_stellar_tx(
+    mut tx: Transaction,
+    sim: &SimulationResult,
+    signed_auth: Vec<SorobanAuthorizationEntry>,
+) -> Result<Transaction, PayError> {
+    // Parse the simulation's SorobanTransactionData
+    let soroban_data_bytes = B64.decode(&sim.transaction_data).map_err(|e| {
+        PayError::new(
+            PayErrorCode::ProtocolMalformed,
+            format!("bad soroban tx data base64: {e}"),
+        )
+    })?;
+    let soroban_data =
+        SorobanTransactionData::from_xdr(&soroban_data_bytes, Limits::none()).map_err(|e| {
+            PayError::new(
+                PayErrorCode::ProtocolMalformed,
+                format!("bad soroban tx data: {e}"),
+            )
+        })?;
+
+    // Update fee: base fee + resource fee
+    let base_fee = 100u32;
+    tx.fee = base_fee.saturating_add(sim.min_resource_fee);
+
+    // Set the SorobanTransactionData in the transaction ext
+    tx.ext = TransactionExt::V1(soroban_data);
+
+    // Replace the auth in the operation with signed auth entries
+    if let Some(op) = tx.operations.to_vec().first() {
+        let mut new_op = op.clone();
+        if let OperationBody::InvokeHostFunction(ref mut ihf) = new_op.body {
+            ihf.auth = signed_auth.try_into().map_err(|_| {
+                PayError::new(PayErrorCode::ProtocolMalformed, "too many auth entries")
+            })?;
+        }
+        tx.operations = vec![new_op].try_into().map_err(|_| {
+            PayError::new(PayErrorCode::ProtocolMalformed, "bad ops")
+        })?;
+    }
+
+    Ok(tx)
+}
+
+// ---------------------------------------------------------------------------
 // Requirement parsing & chain selection
 // ---------------------------------------------------------------------------
 
@@ -244,12 +863,14 @@ fn parsed_amount(req: &PaymentRequirements) -> Option<u128> {
     req.amount.parse().ok()
 }
 
-/// Pick the first payment option whose scheme we support and whose
-/// network the wallet supports. Returns the requirement and its
-/// resolved CAIP-2 network string.
+/// Pick the best payment option whose scheme we support and whose
+/// network the wallet supports. If `preferred_network` is set, only
+/// options matching that network are considered. Returns the requirement
+/// and its resolved CAIP-2 network string.
 fn pick_payment_option<'a>(
     wallet: &dyn WalletAccess,
     requirements: &'a [PaymentRequirements],
+    preferred_network: Option<&str>,
 ) -> Result<(&'a PaymentRequirements, String), PayError> {
     let supported = wallet.supported_chains();
     let mut candidates = Vec::new();
@@ -279,6 +900,13 @@ fn pick_payment_option<'a>(
             Ok(c) => c.chain_id.to_string(),
             Err(_) => req.network.clone(), // Already CAIP-2 (unknown to registry but namespace matched).
         };
+
+        // If the user specified a preferred network, skip non-matching options.
+        if let Some(pref) = preferred_network {
+            if !req.network.eq_ignore_ascii_case(pref) && !network.eq_ignore_ascii_case(pref) {
+                continue;
+            }
+        }
 
         candidates.push((req, network));
     }
@@ -669,8 +1297,8 @@ mod tests {
         assert_eq!(reqs[0].pay_to, "0xv2");
     }
 
-    #[test]
-    fn v2_header_without_version_builds_v2_payment_payload() {
+    #[tokio::test]
+    async fn v2_header_without_version_builds_v2_payment_payload() {
         let x402 = serde_json::json!({
             "accepts": [{
                 "scheme": "exact",
@@ -690,9 +1318,9 @@ mod tests {
         headers.insert("payment-required", encoded.parse().unwrap());
 
         let (version, resource, reqs) = parse_requirements(&headers, "not json").unwrap();
-        let (req, network) = pick_payment_option(&EvmWallet, &reqs).unwrap();
+        let (req, network) = pick_payment_option(&EvmWallet, &reqs, None).unwrap();
         let (payload, _) =
-            build_signed_payment(&EvmWallet, req, &network, version, resource).unwrap();
+            build_signed_payment(&EvmWallet, req, &network, version, resource).await.unwrap();
 
         match payload {
             PaymentPayload::V2(v2) => {
@@ -769,7 +1397,7 @@ mod tests {
     #[test]
     fn pick_evm_by_caip2() {
         let reqs = vec![base_requirement()];
-        let (req, network) = pick_payment_option(&EvmWallet, &reqs).unwrap();
+        let (req, network) = pick_payment_option(&EvmWallet, &reqs, None).unwrap();
         assert_eq!(req.network, "eip155:8453");
         assert_eq!(network, "eip155:8453");
     }
@@ -779,7 +1407,7 @@ mod tests {
         let mut req = base_requirement();
         req.network = "base".into();
         let reqs = [req];
-        let (_, network) = pick_payment_option(&EvmWallet, &reqs).unwrap();
+        let (_, network) = pick_payment_option(&EvmWallet, &reqs, None).unwrap();
         // Human name resolved to CAIP-2.
         assert_eq!(network, "eip155:8453");
     }
@@ -789,7 +1417,7 @@ mod tests {
         let mut req = base_requirement();
         req.network = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp".into();
         let reqs = [req];
-        let err = pick_payment_option(&EvmWallet, &reqs).unwrap_err();
+        let err = pick_payment_option(&EvmWallet, &reqs, None).unwrap_err();
         assert_eq!(err.code, PayErrorCode::UnsupportedChain);
     }
 
@@ -798,7 +1426,7 @@ mod tests {
         let mut req = base_requirement();
         req.network = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp".into();
         let reqs = [req];
-        let (_, network) = pick_payment_option(&SolanaWallet, &reqs).unwrap();
+        let (_, network) = pick_payment_option(&SolanaWallet, &reqs, None).unwrap();
         assert!(network.starts_with("solana:"));
     }
 
@@ -808,7 +1436,7 @@ mod tests {
         let mut sol_req = base_requirement();
         sol_req.network = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp".into();
         let reqs = [sol_req, evm_req];
-        let (_, network) = pick_payment_option(&MultiWallet, &reqs).unwrap();
+        let (_, network) = pick_payment_option(&MultiWallet, &reqs, None).unwrap();
         assert!(network.starts_with("solana:"));
     }
 
@@ -818,7 +1446,7 @@ mod tests {
         let mut cheap = base_requirement();
         cheap.amount = "1000".into();
         let reqs = [expensive, cheap];
-        let (req, network) = pick_payment_option(&EvmWallet, &reqs).unwrap();
+        let (req, network) = pick_payment_option(&EvmWallet, &reqs, None).unwrap();
         assert_eq!(network, "eip155:8453");
         assert_eq!(req.amount, "1000");
     }
@@ -836,7 +1464,7 @@ mod tests {
         regular.amount = "1000".into();
 
         let reqs = [gateway, regular];
-        let (req, _) = pick_payment_option(&EvmWallet, &reqs).unwrap();
+        let (req, _) = pick_payment_option(&EvmWallet, &reqs, None).unwrap();
         assert_eq!(req.amount, "1000");
         assert_eq!(req.extra["name"], "USD Coin");
     }
@@ -846,7 +1474,7 @@ mod tests {
         let mut req = base_requirement();
         req.network = "foochain:1".into();
         let reqs = [req];
-        let err = pick_payment_option(&EvmWallet, &reqs).unwrap_err();
+        let err = pick_payment_option(&EvmWallet, &reqs, None).unwrap_err();
         assert_eq!(err.code, PayErrorCode::UnsupportedChain);
     }
 
@@ -855,7 +1483,7 @@ mod tests {
         let mut req = base_requirement();
         req.scheme = "subscription".into();
         let reqs = [req];
-        let err = pick_payment_option(&EvmWallet, &reqs).unwrap_err();
+        let err = pick_payment_option(&EvmWallet, &reqs, None).unwrap_err();
         assert_eq!(err.code, PayErrorCode::UnsupportedChain);
     }
 
@@ -865,7 +1493,7 @@ mod tests {
         let mut req = base_requirement();
         req.network = "eip155:999999".into();
         let reqs = [req];
-        let (_, network) = pick_payment_option(&EvmWallet, &reqs).unwrap();
+        let (_, network) = pick_payment_option(&EvmWallet, &reqs, None).unwrap();
         assert_eq!(network, "eip155:999999");
     }
 
@@ -983,7 +1611,7 @@ mod tests {
 
         let headers = HeaderMap::new();
         let (_, _, reqs) = parse_requirements(&headers, &body).unwrap();
-        let (req, network) = pick_payment_option(&EvmWallet, &reqs).unwrap();
+        let (req, network) = pick_payment_option(&EvmWallet, &reqs, None).unwrap();
         assert_eq!(req.pay_to, "0x7d9d1821d15B9e0b8Ab98A058361233E255E405D");
         assert_eq!(network, "eip155:8453"); // "base" resolved to CAIP-2
     }

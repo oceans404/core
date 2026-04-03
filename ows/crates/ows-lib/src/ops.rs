@@ -553,6 +553,52 @@ pub fn sign_typed_data(
     })
 }
 
+/// Sign a Stellar Soroban authorization entry preimage. Returns hex-encoded signature.
+///
+/// The `passphrase` parameter accepts either the owner's passphrase or an
+/// API token (`ows_key_...`). When a token is provided, policy enforcement
+/// occurs before signing.
+pub fn sign_stellar_auth_entry(
+    wallet: &str,
+    chain: &str,
+    preimage_bytes: &[u8],
+    passphrase: Option<&str>,
+    index: Option<u32>,
+    vault_path: Option<&Path>,
+) -> Result<SignResult, OwsLibError> {
+    let credential = passphrase.unwrap_or("");
+    let chain = parse_chain(chain)?;
+
+    if chain.chain_type != ows_core::ChainType::Stellar {
+        return Err(OwsLibError::InvalidInput(
+            "sign_stellar_auth_entry requires a Stellar chain".into(),
+        ));
+    }
+
+    // Agent mode: token-based signing with policy enforcement
+    if credential.starts_with(crate::key_store::TOKEN_PREFIX) {
+        return crate::key_ops::sign_stellar_auth_with_api_key(
+            credential, wallet, &chain, preimage_bytes, index, vault_path,
+        );
+    }
+
+    // Owner mode
+    let key = decrypt_signing_key(wallet, chain.chain_type, credential, index, vault_path)?;
+
+    let signer = match &*chain.chain_id {
+        "stellar:testnet" => ows_signer::chains::StellarSigner::testnet(),
+        "stellar:futurenet" => ows_signer::chains::StellarSigner::futurenet(),
+        _ => ows_signer::chains::StellarSigner::pubnet(),
+    };
+
+    let output = signer.sign_soroban_auth(key.expose(), preimage_bytes)?;
+
+    Ok(SignResult {
+        signature: hex::encode(&output.signature),
+        recovery_id: None,
+    })
+}
+
 /// Sign and broadcast a transaction. Returns the transaction hash.
 ///
 /// The `passphrase` parameter accepts either the owner's passphrase or an

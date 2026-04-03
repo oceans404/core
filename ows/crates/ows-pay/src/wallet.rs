@@ -1,4 +1,4 @@
-use crate::error::PayError;
+use crate::error::{PayError, PayErrorCode};
 use ows_core::ChainType;
 
 /// An account on any chain.
@@ -29,4 +29,22 @@ pub trait WalletAccess: Send + Sync {
     ///
     /// Returns the signature as a hex string with `0x` prefix.
     fn sign_payload(&self, scheme: &str, network: &str, payload: &str) -> Result<String, PayError>;
+
+    /// Sign a Stellar Soroban auth entry preimage.
+    ///
+    /// `preimage_xdr` is base64-encoded XDR of the HashIdPreimage.
+    /// Returns base64-encoded 64-byte Ed25519 signature.
+    ///
+    /// Default: returns error (not all wallets support Stellar).
+    fn sign_stellar_auth(
+        &self,
+        network: &str,
+        preimage_xdr: &str,
+    ) -> Result<String, PayError> {
+        let _ = (network, preimage_xdr);
+        Err(PayError::new(
+            PayErrorCode::UnsupportedChain,
+            "stellar auth signing not supported by this wallet",
+        ))
+    }
 }

@@ -260,6 +260,9 @@ enum PayCommands {
         /// Request body (JSON)
         #[arg(long)]
         body: Option<String>,
+        /// Preferred network (e.g. "eip155:84532", "stellar:testnet")
+        #[arg(long)]
+        network: Option<String>,
         /// Skip passphrase prompt (use empty passphrase)
         #[arg(long)]
         no_passphrase: bool,
@@ -477,8 +480,9 @@ fn run(cli: Cli) -> Result<(), CliError> {
                 wallet,
                 method,
                 body,
+                network,
                 no_passphrase,
-            } => commands::pay::run(&url, &wallet, &method, body.as_deref(), no_passphrase),
+            } => commands::pay::run(&url, &wallet, &method, body.as_deref(), network.as_deref(), no_passphrase),
             PayCommands::Discover {
                 query,
                 limit,

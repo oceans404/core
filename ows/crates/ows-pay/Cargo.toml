@@ -27,3 +27,10 @@ thiserror = "2"
 
 # Random nonce generation
 getrandom = "0.2"
+
+# Stellar XDR types + strkey encoding
+stellar-xdr = { workspace = true }
+stellar-strkey = { workspace = true }
+
+# Hashing (Stellar network ID)
+sha2 = "0.10"

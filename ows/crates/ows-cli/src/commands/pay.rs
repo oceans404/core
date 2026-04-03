@@ -79,14 +79,51 @@ impl ows_pay::WalletAccess for OwsLibWallet {
             )),
         }
     }
+
+    fn sign_stellar_auth(
+        &self,
+        network: &str,
+        preimage_xdr: &str,
+    ) -> Result<String, ows_pay::PayError> {
+        use base64::{engine::general_purpose::STANDARD as B64, Engine};
+
+        let preimage_bytes = B64.decode(preimage_xdr).map_err(|e| {
+            ows_pay::PayError::new(
+                ows_pay::PayErrorCode::ProtocolMalformed,
+                format!("invalid base64 auth preimage: {e}"),
+            )
+        })?;
+
+        let result = ows_lib::sign_stellar_auth_entry(
+            &self.wallet_name,
+            network,
+            &preimage_bytes,
+            Some(&self.passphrase),
+            None,
+            None,
+        )
+        .map_err(|e| {
+            ows_pay::PayError::new(ows_pay::PayErrorCode::SigningFailed, e.to_string())
+        })?;
+
+        let sig_bytes = hex::decode(&result.signature).map_err(|e| {
+            ows_pay::PayError::new(
+                ows_pay::PayErrorCode::SigningFailed,
+                format!("invalid hex from signer: {e}"),
+            )
+        })?;
+
+        Ok(B64.encode(&sig_bytes))
+    }
 }
 
-/// `ows pay request <url> --wallet <name> [--method GET] [--body '{}']`
+/// `ows pay request <url> --wallet <name> [--method GET] [--body '{}'] [--network <net>]`
 pub fn run(
     url: &str,
     wallet_name: &str,
     method: &str,
     body: Option<&str>,
+    network: Option<&str>,
     skip_passphrase: bool,
 ) -> Result<(), CliError> {
     let passphrase = if skip_passphrase {
@@ -103,7 +140,7 @@ pub fn run(
     let rt =
         tokio::runtime::Runtime::new().map_err(|e| CliError::InvalidArgs(format!("tokio: {e}")))?;
 
-    let result = rt.block_on(ows_pay::pay(&wallet, url, method, body))?;
+    let result = rt.block_on(ows_pay::pay(&wallet, url, method, body, network))?;
 
     if result.status < 400 {
         if let Some(ref payment) = result.payment {

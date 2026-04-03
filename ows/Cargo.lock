@@ -1632,6 +1632,9 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sha2",
+ "stellar-strkey 0.0.16",
+ "stellar-xdr",
  "thiserror 2.0.18",
  "tokio",
 ]
