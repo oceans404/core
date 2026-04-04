@@ -226,11 +226,11 @@ pub(crate) fn format_nano(amount_str: &str) -> String {
     let whole = amount / divisor;
     let frac = amount % divisor;
     if frac == 0 {
-        format!("{whole} NANO")
+        format!("{whole} XNO")
     } else {
         let frac_str = format!("{frac:030}");
         let trimmed = frac_str.trim_end_matches('0');
-        format!("{whole}.{trimmed} NANO")
+        format!("{whole}.{trimmed} XNO")
     }
 }
 
@@ -305,17 +305,17 @@ mod tests {
 
     #[test]
     fn format_nano_whole() {
-        assert_eq!(format_nano("1000000000000000000000000000000"), "1 NANO");
+        assert_eq!(format_nano("1000000000000000000000000000000"), "1 XNO");
     }
 
     #[test]
     fn format_nano_fractional() {
-        assert_eq!(format_nano("1500000000000000000000000000000"), "1.5 NANO");
+        assert_eq!(format_nano("1500000000000000000000000000000"), "1.5 XNO");
     }
 
     #[test]
     fn format_nano_very_small() {
-        assert_eq!(format_nano("1"), "0.000000000000000000000000000001 NANO");
+        assert_eq!(format_nano("1"), "0.000000000000000000000000000001 XNO");
     }
 
     #[test]
@@ -323,7 +323,7 @@ mod tests {
         assert_eq!(format_price("10000", "eip155:8453"), "$0.01");
         assert_eq!(
             format_price("1000000000000000000000000000000", "nano:mainnet"),
-            "1 NANO"
+            "1 XNO"
         );
     }
 
