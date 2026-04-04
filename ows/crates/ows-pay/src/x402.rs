@@ -386,7 +386,7 @@ async fn build_stellar_exact(
         })
     };
 
-    let amount_display = crate::discovery::format_usdc(&req.amount);
+    let amount_display = crate::discovery::format_usdc_decimals(&req.amount, 7);
     let payment_info = PaymentInfo {
         amount: amount_display,
         network: chains::display_name(network).to_string(),

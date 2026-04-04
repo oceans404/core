@@ -211,10 +211,15 @@ pub(crate) fn format_price(amount_str: &str, network: &str) -> String {
 }
 
 pub(crate) fn format_usdc(amount_str: &str) -> String {
+    format_usdc_decimals(amount_str, 6)
+}
+
+pub(crate) fn format_usdc_decimals(amount_str: &str, decimals: u32) -> String {
     let amount: u128 = amount_str.parse().unwrap_or(0);
-    let whole = amount / 1_000_000;
-    let frac = amount % 1_000_000;
-    let frac_str = format!("{frac:06}");
+    let divisor: u128 = 10u128.pow(decimals);
+    let whole = amount / divisor;
+    let frac = amount % divisor;
+    let frac_str = format!("{frac:0>width$}", width = decimals as usize);
     let trimmed = frac_str.trim_end_matches('0');
     let trimmed = if trimmed.is_empty() { "00" } else { trimmed };
     format!("${whole}.{trimmed}")
