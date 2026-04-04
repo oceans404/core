@@ -122,13 +122,13 @@ fn work_generate_single(
 }
 
 /// Default PoW fallback endpoint, tried when the primary RPC fails work_generate.
-const FALLBACK_WORK_PEER: &str = "https://rpc.nano.to";
+const FALLBACK_WORK_URL: &str = "https://rpc.nano.to";
 
 /// Request proof-of-work with multi-endpoint fallback.
 ///
 /// Tries endpoints in order:
 /// 1. The primary `rpc_url`
-/// 2. Peers from `NANO_WORK_PEERS` env var (semicolon-separated URLs)
+/// 2. URLs from `NANO_WORK_URL` env var (semicolon-separated URLs)
 /// 3. Built-in fallback endpoint
 ///
 /// All remote errors are collected and logged to stderr. If every remote fails
@@ -136,17 +136,17 @@ const FALLBACK_WORK_PEER: &str = "https://rpc.nano.to";
 pub fn work_generate(rpc_url: &str, hash: &str, difficulty: &str) -> Result<String, OwsLibError> {
     let mut endpoints: Vec<String> = vec![rpc_url.to_string()];
 
-    if let Ok(peers) = std::env::var("NANO_WORK_PEERS") {
-        for peer in peers.split(';') {
-            let peer = peer.trim();
-            if !peer.is_empty() && peer != rpc_url {
-                endpoints.push(peer.to_string());
+    if let Ok(urls) = std::env::var("NANO_WORK_URL") {
+        for url in urls.split(';') {
+            let url = url.trim();
+            if !url.is_empty() && url != rpc_url {
+                endpoints.push(url.to_string());
             }
         }
     }
 
-    if !endpoints.iter().any(|e| e == FALLBACK_WORK_PEER) {
-        endpoints.push(FALLBACK_WORK_PEER.to_string());
+    if !endpoints.iter().any(|e| e == FALLBACK_WORK_URL) {
+        endpoints.push(FALLBACK_WORK_URL.to_string());
     }
 
     let mut last_error = None;
