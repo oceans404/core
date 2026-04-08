@@ -4,4 +4,4 @@ members = ["crates/ows-core", "crates/ows-signer", "crates/ows-lib", "crates/ows
 
 [workspace.dependencies]
 stellar-xdr = { version = "26.0.0", features = ["curr"] }
-stellar-strkey = "0.0.16"
+stellar-strkey = "0.0.13"

@@ -1650,7 +1650,7 @@ mod tests {
         let encoded = B64.encode(serde_json::to_string(&x402).unwrap().as_bytes());
         let (url, rx, handle) = spawn_x402_flow_server("x-payment-required", encoded);
 
-        let result = crate::pay(&EvmWallet, &url, "GET", None).await.unwrap();
+        let result = crate::pay(&EvmWallet, &url, "GET", None, None).await.unwrap();
         let retry_request = rx.recv_timeout(Duration::from_secs(3)).unwrap();
         handle.join().unwrap();
 
@@ -1693,7 +1693,7 @@ mod tests {
         let encoded = B64.encode(serde_json::to_string(&x402).unwrap().as_bytes());
         let (url, rx, handle) = spawn_x402_flow_server("payment-required", encoded);
 
-        let result = crate::pay(&EvmWallet, &url, "GET", None).await.unwrap();
+        let result = crate::pay(&EvmWallet, &url, "GET", None, None).await.unwrap();
         let retry_request = rx.recv_timeout(Duration::from_secs(3)).unwrap();
         handle.join().unwrap();
 

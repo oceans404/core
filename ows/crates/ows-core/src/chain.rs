@@ -28,6 +28,7 @@ pub const ALL_CHAIN_TYPES: [ChainType; 12] = [
     ChainType::Cosmos,
     ChainType::Tron,
     ChainType::Ton,
+    ChainType::Spark,
     ChainType::Filecoin,
     ChainType::Sui,
     ChainType::Xrpl,
