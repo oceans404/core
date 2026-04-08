@@ -77,6 +77,25 @@ pub trait ChainSigner: Send + Sync {
         )))
     }
 
+    /// Sign inner authorization entries within a transaction envelope.
+    ///
+    /// Some chains require signing authorization data embedded inside the
+    /// transaction (e.g. Soroban auth entries on Stellar, ERC-4337 UserOps
+    /// on EVM). This method inspects the transaction, signs any inner
+    /// authorizations that belong to the given private key, and returns the
+    /// modified transaction bytes.
+    ///
+    /// The default implementation returns the input unchanged — chains must
+    /// opt in by overriding this method.
+    fn sign_inner_authorizations(
+        &self,
+        private_key: &[u8],
+        tx_bytes: &[u8],
+    ) -> Result<Vec<u8>, SignerError> {
+        let _ = (private_key,);
+        Ok(tx_bytes.to_vec())
+    }
+
     /// Returns the default BIP-44 derivation path template for this chain.
     fn default_derivation_path(&self, index: u32) -> String;
 }

@@ -655,19 +655,22 @@ pub fn sign_encode_and_broadcast(
     let chain = parse_chain(chain)?;
     let signer = signer_for_chain(&chain);
 
-    // 1. Extract signable portion (strips signature-slot headers for Solana; no-op for others)
-    let signable = signer.extract_signable_bytes(tx_bytes)?;
+    // 1. Sign inner authorizations if present (Soroban auth entries on Stellar; no-op for others)
+    let tx_bytes = signer.sign_inner_authorizations(private_key, tx_bytes)?;
 
-    // 2. Sign
+    // 2. Extract signable portion (strips signature-slot headers for Solana; no-op for others)
+    let signable = signer.extract_signable_bytes(&tx_bytes)?;
+
+    // 3. Sign the outer transaction envelope
     let output = signer.sign_transaction(private_key, signable)?;
 
-    // 3. Encode the full signed transaction
-    let signed_tx = signer.encode_signed_transaction(tx_bytes, &output)?;
+    // 4. Encode the full signed transaction
+    let signed_tx = signer.encode_signed_transaction(&tx_bytes, &output)?;
 
-    // 4. Resolve RPC URL using exact chain_id
+    // 5. Resolve RPC URL using exact chain_id
     let rpc = resolve_rpc_url(chain.chain_id, chain.chain_type, rpc_url)?;
 
-    // 5. Broadcast the full signed transaction
+    // 6. Broadcast the full signed transaction
     let tx_hash = broadcast(chain.chain_type, &rpc, &signed_tx)?;
 
     Ok(SendResult { tx_hash })

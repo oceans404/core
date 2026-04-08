@@ -7,6 +7,7 @@ pub mod key_cache;
 pub mod mnemonic;
 pub mod process_hardening;
 pub mod rlp;
+pub mod soroban_auth;
 pub mod traits;
 pub mod zeroizing;
 
