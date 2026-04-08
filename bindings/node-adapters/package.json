@@ -7,10 +7,11 @@
   "exports": {
     ".": { "types": "./src/index.d.ts", "default": "./src/index.js" },
     "./viem": { "types": "./src/viem.d.ts", "default": "./src/viem.js" },
-    "./solana": { "types": "./src/solana.d.ts", "default": "./src/solana.js" }
+    "./solana": { "types": "./src/solana.d.ts", "default": "./src/solana.js" },
+    "./wdk": { "types": "./src/wdk.d.ts", "default": "./src/wdk.js" }
   },
   "scripts": {
-    "test": "node --test __test__/viem.spec.mjs __test__/solana.spec.mjs",
+    "test": "node --test __test__/viem.spec.mjs __test__/solana.spec.mjs __test__/wdk.spec.mjs",
     "prepublishOnly": "npm test"
   },
   "dependencies": {
@@ -19,11 +20,13 @@
   },
   "peerDependencies": {
     "viem": ">=2.0.0",
-    "@solana/web3.js": ">=1.0.0"
+    "@solana/web3.js": ">=1.0.0",
+    "@tetherto/wdk-wallet": ">=1.0.0-beta.0"
   },
   "peerDependenciesMeta": {
     "viem": { "optional": true },
-    "@solana/web3.js": { "optional": true }
+    "@solana/web3.js": { "optional": true },
+    "@tetherto/wdk-wallet": { "optional": true }
   },
   "devDependencies": {
     "viem": "^2.0.0",

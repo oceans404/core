@@ -7,3 +7,8 @@ Object.defineProperty(exports, "owsToSolanaKeypair", {
   enumerable: true,
   get() { return require("./solana").owsToSolanaKeypair; },
 });
+
+Object.defineProperty(exports, "owsToWdkAccount", {
+  enumerable: true,
+  get() { return require("./wdk").owsToWdkAccount; },
+});
